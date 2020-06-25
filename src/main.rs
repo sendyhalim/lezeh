@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::process::Command;
 
@@ -12,6 +11,7 @@ pub mod built_info {
 }
 
 type ResultDynError<T> = Result<T, Box<dyn std::error::Error>>;
+struct MatchedTaskMapping(String, String);
 
 fn main() -> ResultDynError<()> {
   let cli = Cli::new("Lezeh")
@@ -69,35 +69,35 @@ fn merge_all(task_ids: Vec<&str>) {
   println!("[Run] git branch -r");
   let remote_branches = exec("git branch -r", "Cannot get all remote branches");
 
-  let filtered_branches: HashSet<String> = remote_branches
+  let filtered_branch_mappings: Vec<MatchedTaskMapping> = remote_branches
     .split('\n')
     .into_iter()
-    .map(|s| s.trim().to_owned())
-    .filter(|remote_branch| {
-      return !task_ids
+    .flat_map(|remote_branch| {
+      let remote_branch = remote_branch.trim().to_owned();
+
+      return task_ids
         .iter()
-        .filter(|task_id| {
-          return remote_branch.contains(&task_id[..]);
+        .map(|task_id| {
+          return MatchedTaskMapping(String::from(task_id.to_owned()), remote_branch.clone());
         })
-        .map(|x| String::from(*x))
-        .collect::<Vec<String>>()
-        .is_empty();
+        .collect::<Vec<MatchedTaskMapping>>();
+    })
+    .filter(|MatchedTaskMapping(task_id, remote_branch)| {
+      return remote_branch.contains(&task_id[..]);
     })
     .collect();
 
-  let filtered_branch_string = filtered_branches
-    .iter()
-    .collect::<Vec<&String>>()
-    .into_iter()
-    .fold("".to_owned(), |acc, branch| {
-      return format!("{}\n{}", acc, branch);
-    });
+  println!("Branches to be merged");
 
-  println!("Branches to be merged: {}", filtered_branch_string);
+  for MatchedTaskMapping(task_id, remote_branch) in filtered_branch_mappings.iter() {
+    println!("{}: {}", task_id, remote_branch);
+  }
+
+  println!("------------------------------------------");
   println!("------------------------------------------");
 
-  for remote_branch in filtered_branches.iter() {
-    merge(&remote_branch)
+  for MatchedTaskMapping(task_id, remote_branch) in filtered_branch_mappings.iter() {
+    merge(&remote_branch);
   }
 }
 
