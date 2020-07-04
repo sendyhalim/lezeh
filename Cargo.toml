@@ -9,7 +9,6 @@ homepage = "https://github.com/sendyhalim/lezeh"
 repository = "https://github.com/sendyhalim/lezeh"
 keywords = ["cli", "developer-tools"]
 categories = ["command-line-utilities"]
-license = "MIT"
 license-file = "license"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,6 +16,18 @@ license-file = "license"
 [dependencies]
 clap = { version = "2.33" }
 failure = { version = "0.1.7" }
+phab-lib = { version = "0.0.1" }
+config = { version = "0.10" }
+serde = { version = "1.0.60", features = ["derive"] }
 
 [build-dependencies]
 built = "0.4"
+
+
+[lib]
+name = "lib"
+path = "src/lib/lib.rs"
+
+[[bin]]
+name = "lezeh"
+path = "src/bin/main.rs"
