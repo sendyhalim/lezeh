@@ -5,7 +5,7 @@ make install
 ```
 
 # Setup
-First create config file at `~/.lezeh`, we're [Hjson](https://hjson.github.io/) format.
+First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github.io/) format.
 
 ```bash
 {
