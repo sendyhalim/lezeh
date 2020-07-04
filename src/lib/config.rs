@@ -9,10 +9,10 @@ use crate::types::ResultDynError;
 
 #[derive(Debug, Deserialize)]
 pub struct PhabConfig {
-  host: String,
-  api_token: String,
-  pkcs12_path: String,
-  pkcs12_password: String,
+  pub host: String,
+  pub api_token: String,
+  pub pkcs12_path: String,
+  pub pkcs12_password: String,
 }
 
 #[derive(Debug, Deserialize)]

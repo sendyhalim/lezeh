@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::process::Command;
 
 use phab_lib::client::phabricator::CertIdentityConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
+use phab_lib::dto::Task as PhabricatorTask;
 use phab_lib::dto::User as PhabricatorUser;
 
 use crate::config::Config;
@@ -12,16 +14,31 @@ struct MatchedTaskMapping(String, String);
 
 pub struct DeploymentClient {
   pub config: Config,
+  phabricator: PhabricatorClient,
 }
 
 impl DeploymentClient {
-  pub fn new(config: Config) -> DeploymentClient {
-    return DeploymentClient { config };
+  pub fn new(config: Config) -> ResultDynError<DeploymentClient> {
+    let cert_identity_config = CertIdentityConfig {
+      pkcs12_path: config.phab.pkcs12_path.as_ref(),
+      pkcs12_password: config.phab.pkcs12_password.as_ref(),
+    };
+
+    let phabricator = PhabricatorClient::new(
+      &config.phab.host,
+      &config.phab.api_token,
+      Some(cert_identity_config),
+    )?;
+
+    return Ok(DeploymentClient {
+      config,
+      phabricator,
+    });
   }
 }
 
 impl DeploymentClient {
-  pub fn merge_all(&self, task_ids: Vec<&str>) -> ResultDynError<()> {
+  pub async fn merge_all(&self, task_ids: Vec<&str>) -> ResultDynError<()> {
     println!("[Run] git pull origin master");
     exec("git pull origin master", "Cannot git pull origin master")?;
 
@@ -50,9 +67,50 @@ impl DeploymentClient {
 
     println!("Branches to be merged");
 
+    let tasks: Vec<PhabricatorTask> = self.phabricator.get_tasks_by_ids(task_ids).await?;
+
+    let task_by_id: HashMap<&str, &PhabricatorTask> =
+      tasks.iter().map(|task| (task.id.as_ref(), task)).collect();
+
+    let task_assignee_ids: Vec<&str> = tasks
+      .iter()
+      // For simplicity's sake, we can be sure that every task should
+      // have been assigned to an engineer.
+      .map(|task| task.assigned_phid.as_ref().unwrap().as_ref())
+      .collect();
+
+    let task_assignees: Vec<PhabricatorUser> = self
+      .phabricator
+      .get_users_by_phids(task_assignee_ids.iter().map(AsRef::as_ref).collect())
+      .await?;
+
+    let task_assignee_by_phid: HashMap<&str, &PhabricatorUser> = task_assignees
+      .iter()
+      .map(|user| (user.phid.as_ref(), user))
+      .collect();
+
     for MatchedTaskMapping(task_id, remote_branch) in filtered_branch_mappings.iter() {
-      // TODO: Fetch task owner here using phab lib
-      println!("{}: {}", task_id, remote_branch);
+      let task_id: &str = task_id.as_ref();
+
+      // Phabricator task id does not have prefix `T` as in `T1234`
+      let task = task_by_id.get(PhabricatorClient::clean_id(task_id));
+
+      if task.is_none() {
+        println!("Could not find task {} from phabricator", task_id);
+        continue;
+      }
+
+      let task = task.unwrap();
+      let assigned_phid: &str = task.assigned_phid.as_ref().unwrap();
+
+      // We can be sure task_assignee 100% exist because
+      // we construct task_assignees based on tasks.
+      let task_assignee = task_assignee_by_phid.get(assigned_phid).unwrap();
+
+      println!(
+        "{} - {}: {}",
+        task_id, task_assignee.username, remote_branch
+      );
     }
 
     println!("------------------------------------------");

@@ -12,7 +12,8 @@ pub mod built_info {
 
 type ResultDynError<T> = Result<T, Box<dyn std::error::Error>>;
 
-fn main() -> ResultDynError<()> {
+#[tokio::main]
+async fn main() -> ResultDynError<()> {
   // Default config
   let home_dir = std::env::var("HOME").unwrap();
   let config = Config::new(format!("{}/.lezeh", home_dir))?;
@@ -26,7 +27,7 @@ fn main() -> ResultDynError<()> {
     .get_matches();
 
   if let Some(deployment_cli) = cli.subcommand_matches("deployment") {
-    handle_deployment_cli(deployment_cli, config)?;
+    handle_deployment_cli(deployment_cli, config).await?;
   }
 
   return Ok(());
@@ -48,8 +49,8 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
     );
 }
 
-fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
-  let deployment_client = DeploymentClient::new(config);
+async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
+  let deployment_client = DeploymentClient::new(config)?;
 
   if let Some(deployment_cli) = cli.subcommand_matches("merge-all") {
     let task_ids = deployment_cli
@@ -58,7 +59,7 @@ fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError
       .map(Into::into)
       .collect();
 
-    deployment_client.merge_all(task_ids)?;
+    deployment_client.merge_all(task_ids).await?;
   }
 
   return Ok(());
