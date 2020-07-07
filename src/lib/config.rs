@@ -1,5 +1,4 @@
 use config::Config as BaseConfig;
-use config::ConfigError;
 use config::File;
 use config::FileFormat;
 use serde::Deserialize;

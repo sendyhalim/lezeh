@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::process::Command;
+use std::process::Stdio;
 
 use phab_lib::client::phabricator::CertIdentityConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
@@ -163,18 +164,23 @@ impl DeploymentClient {
   }
 }
 
-fn exec(command: &str, assertion_txt: &str) -> ResultDynError<String> {
-  let mut command_parts = command.split(' ').collect::<VecDeque<&str>>();
+fn command_from_str(command_str: &str) -> ResultDynError<&'static mut Command> {
+  let mut command_parts = command_str.split(' ').collect::<VecDeque<&str>>();
 
-  let cmd = command_parts
+  let command = command_parts
     .pop_front()
-    .ok_or(format!("Invalid command: {}", command))
+    .ok_or(format!("Invalid command: {}", command_str))
     .map_err(failure::err_msg)?;
 
-  let command_result = Command::new(cmd)
-    .args(command_parts)
-    .output()
-    .expect(assertion_txt);
+  let command = Command::new(command).args(command_parts);
+
+  return Ok(command);
+}
+
+fn exec(command_str: &str, assertion_txt: &str) -> ResultDynError<String> {
+  let command = command_from_str(command_str)?;
+
+  let command_result = command.output().expect(assertion_txt);
 
   if !command_result.stderr.is_empty() {
     return std::str::from_utf8(&command_result.stderr)
