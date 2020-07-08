@@ -12,6 +12,10 @@ use crate::config::Config;
 use crate::types::ResultDynError;
 
 struct MatchedTaskMapping(String, String);
+struct TaskInMasterBranch {
+  commit_message: String,
+  task_id: String,
+}
 
 pub struct DeploymentClient {
   pub config: Config,
@@ -68,7 +72,7 @@ impl DeploymentClient {
 
     println!("Branches to be merged");
 
-    let tasks: Vec<PhabricatorTask> = self.phabricator.get_tasks_by_ids(task_ids).await?;
+    let tasks: Vec<PhabricatorTask> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
 
     let task_by_id: HashMap<&str, &PhabricatorTask> =
       tasks.iter().map(|task| (task.id.as_ref(), task)).collect();
@@ -111,6 +115,19 @@ impl DeploymentClient {
       println!(
         "{} - {}: {}",
         task_id, task_assignee.username, remote_branch
+      );
+    }
+
+    println!("------------------------------------------");
+    println!("------------------------------------------");
+    println!("Tasks in master branch");
+
+    let task_in_masters = self.tasks_in_master_branch(&task_ids).await?;
+
+    for task_in_master in task_in_masters {
+      println!(
+        "{}: {}",
+        task_in_master.task_id, task_in_master.commit_message
       );
     }
 
@@ -162,9 +179,60 @@ impl DeploymentClient {
 
     return Ok(());
   }
+
+  async fn tasks_in_master_branch(
+    &self,
+    task_ids: &Vec<&str>,
+  ) -> ResultDynError<Vec<TaskInMasterBranch>> {
+    let git_log_handle = spawn_command_from_str("git log --oneline", None, Some(Stdio::piped()))?;
+
+    let grep_regex_input = task_ids.iter().fold("".to_owned(), |acc, task_id| {
+      if acc.is_empty() {
+        return String::from(*task_id);
+      }
+
+      return format!("{}\\|{}", acc, task_id);
+    });
+
+    let grep_output = spawn_command_from_str(
+      &format!("grep {}", grep_regex_input),
+      Some(git_log_handle.stdout.unwrap().into()),
+      None,
+    )?
+    .wait_with_output()?;
+
+    let grep_output = handle_command_output(grep_output)?;
+    let commit_messages: Vec<&str> = grep_output.lines().collect();
+
+    return Ok(
+      task_ids
+        .iter()
+        .flat_map(|task_id| -> Vec<(String, String)> {
+          return commit_messages
+            .iter()
+            .filter_map(|commit_message: &&str| -> Option<(String, String)> {
+              if !commit_message.contains(task_id) {
+                return None;
+              }
+
+              return Some((String::from(*task_id), String::from(*commit_message)));
+            })
+            .collect();
+        })
+        .map(|(task_id, commit_message)| TaskInMasterBranch {
+          task_id,
+          commit_message,
+        })
+        .collect(),
+    );
+  }
 }
 
-fn command_from_str(command_str: &str) -> ResultDynError<&'static mut Command> {
+fn spawn_command_from_str(
+  command_str: &str,
+  stdin: Option<Stdio>,
+  stdout: Option<Stdio>,
+) -> ResultDynError<std::process::Child> {
   let mut command_parts = command_str.split(' ').collect::<VecDeque<&str>>();
 
   let command = command_parts
@@ -172,23 +240,42 @@ fn command_from_str(command_str: &str) -> ResultDynError<&'static mut Command> {
     .ok_or(format!("Invalid command: {}", command_str))
     .map_err(failure::err_msg)?;
 
-  let command = Command::new(command).args(command_parts);
+  let handle = Command::new(command)
+    .args(command_parts)
+    .stdin(stdin.unwrap_or(Stdio::null()))
+    .stdout(stdout.unwrap_or(Stdio::piped()))
+    .spawn()?;
 
-  return Ok(command);
+  return Ok(handle);
+}
+
+fn vec_to_string(v: Vec<u8>) -> ResultDynError<String> {
+  return std::str::from_utf8(&v)
+    .map(String::from)
+    .map_err(failure::err_msg);
+}
+
+fn stderr_to_err(stderr: Vec<u8>) -> ResultDynError<String> {
+  let output_err = vec_to_string(stderr)?;
+
+  return Err(failure::err_msg(output_err));
+}
+
+fn handle_command_output(output: std::process::Output) -> ResultDynError<String> {
+  if !output.stderr.is_empty() {
+    // Convert explicitly to Err.
+    return stderr_to_err(output.stderr);
+  }
+
+  return vec_to_string(output.stdout);
 }
 
 fn exec(command_str: &str, assertion_txt: &str) -> ResultDynError<String> {
-  let command = command_from_str(command_str)?;
-
-  let command_result = command.output().expect(assertion_txt);
+  let command_result = spawn_command_from_str(command_str, None, None)?.wait_with_output()?;
 
   if !command_result.stderr.is_empty() {
-    return std::str::from_utf8(&command_result.stderr)
-      .map(String::from)
-      .map_err(failure::err_msg);
+    return stderr_to_err(command_result.stderr);
   }
 
-  return std::str::from_utf8(&command_result.stdout)
-    .map(String::from)
-    .map_err(failure::err_msg);
+  return vec_to_string(command_result.stdout);
 }
