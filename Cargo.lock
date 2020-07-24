@@ -638,6 +638,7 @@ dependencies = [
  "clap",
  "config",
  "failure",
+ "futures",
  "phab-lib",
  "serde 1.0.114",
  "tokio",

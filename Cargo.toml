@@ -19,6 +19,7 @@ failure = { version = "0.1.7" }
 phab-lib = { version = "0.1" }
 config = { version = "0.10" }
 serde = { version = "1.0.60", features = ["derive"] }
+futures = { version = "0.3" }
 tokio = { version = "0.2" }
 
 [build-dependencies]

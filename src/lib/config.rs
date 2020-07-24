@@ -15,8 +15,19 @@ pub struct PhabConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RepositoryConfig {
+  pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeploymentConfig {
+  pub repositories: Vec<RepositoryConfig>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Config {
   pub phab: PhabConfig,
+  pub deployment: DeploymentConfig,
 }
 
 impl Config {

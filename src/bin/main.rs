@@ -59,7 +59,40 @@ async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDy
       .map(Into::into)
       .collect();
 
-    deployment_client.merge_all(task_ids).await?;
+    let output = deployment_client.merge_all_repos(&task_ids).await?;
+
+    println!("# Merge stats");
+    println!("## Not found task ids");
+    println!("================================");
+    println!("================================");
+
+    for lib::client::UserTaskMapping(user, task) in output.not_found_user_task_mappings.iter() {
+      println!("{}: {}", task.phid, user.username);
+    }
+
+    println!("");
+    println!("## Repo merge stats");
+    println!("================================");
+    println!("================================");
+    for repo_merge_output in output.merge_all_outputs.iter() {
+      println!("### Repo {}", repo_merge_output.repo_path);
+      println!("--------------------------------");
+
+      println!("Tasks in master branch");
+      for task_in_master_branch in repo_merge_output.tasks_in_master_branch.iter() {
+        println!(
+          "{}: {}",
+          task_in_master_branch.task_id, task_in_master_branch.commit_message
+        );
+      }
+
+      println!("Matched tasks");
+      for lib::client::MatchedTaskBranchMapping(task_id, remote_branch) in
+        repo_merge_output.matched_task_branch_mappings.iter()
+      {
+        println!("{}: {}", task_id, remote_branch);
+      }
+    }
   }
 
   return Ok(());

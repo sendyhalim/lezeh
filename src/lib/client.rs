@@ -3,19 +3,15 @@ use std::collections::VecDeque;
 use std::process::Command;
 use std::process::Stdio;
 
+use futures::future::FutureExt;
+use futures::Future;
 use phab_lib::client::phabricator::CertIdentityConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
-use phab_lib::dto::Task as PhabricatorTask;
-use phab_lib::dto::User as PhabricatorUser;
+use phab_lib::dto::Task;
+use phab_lib::dto::User;
 
 use crate::config::Config;
 use crate::types::ResultDynError;
-
-struct MatchedTaskMapping(String, String);
-struct TaskInMasterBranch {
-  commit_message: String,
-  task_id: String,
-}
 
 pub struct DeploymentClient {
   pub config: Config,
@@ -42,8 +38,127 @@ impl DeploymentClient {
   }
 }
 
+#[derive(Debug)]
+pub struct MergeAllOutput {
+  pub repo_path: String,
+  pub tasks_in_master_branch: Vec<TaskInMasterBranch>,
+  pub matched_task_branch_mappings: Vec<MatchedTaskBranchMapping>,
+}
+
+#[derive(Debug)]
+pub struct MergeAllReposOutput {
+  pub merge_all_outputs: Vec<MergeAllOutput>,
+  pub task_by_id: HashMap<String, Task>,
+  pub not_found_user_task_mappings: Vec<UserTaskMapping>,
+}
+
+#[derive(Debug)]
+pub struct UserTaskMapping(pub User, pub Task);
+
+#[derive(Debug)]
+pub struct MatchedTaskBranchMapping(pub String, pub String);
+
+#[derive(Debug)]
+pub struct TaskInMasterBranch {
+  pub commit_message: String,
+  pub task_id: String,
+}
+
 impl DeploymentClient {
-  pub async fn merge_all(&self, task_ids: Vec<&str>) -> ResultDynError<()> {
+  pub async fn merge_all_repos(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllReposOutput> {
+    let tasks: Vec<Task> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
+    let task_by_id: HashMap<String, Task> = tasks
+      .iter()
+      .map(|task| {
+        return (task.phid.clone(), task.clone());
+      })
+      .collect();
+
+    let task_assignee_ids: Vec<&str> = tasks
+      .iter()
+      // For simplicity's sake, we can be sure that every task should
+      // have been assigned to an engineer.
+      .map(|task| task.assigned_phid.as_ref().unwrap().as_ref())
+      .collect();
+
+    let task_assignees: Vec<User> = self
+      .phabricator
+      .get_users_by_phids(task_assignee_ids.iter().map(AsRef::as_ref).collect())
+      .await?;
+
+    let task_assignee_by_phid: HashMap<String, User> = task_assignees
+      .into_iter()
+      .map(|user| (user.phid.clone(), user))
+      .collect();
+
+    let futs: Vec<
+      std::pin::Pin<Box<dyn Future<Output = ResultDynError<MergeAllOutput>> + std::marker::Send>>,
+    > = self
+      .config
+      .deployment
+      .repositories
+      .iter()
+      .map(|repo_config| return self.merge_for_repo(&repo_config.path, task_ids).boxed())
+      .collect();
+
+    let merge_results = futures::future::join_all(futs).await;
+
+    // Make sure that all is well
+    let merge_results: Result<Vec<MergeAllOutput>, _> = merge_results.into_iter().collect();
+    let merge_results = merge_results?;
+
+    // Start filtering all the not found tasks
+    let mut found_task_count_by_id: HashMap<String, usize> = tasks
+      .iter()
+      .map(|task| {
+        return (task.phid.clone(), 0);
+      })
+      .collect();
+
+    merge_results.iter().for_each(|merge_result| {
+      for MatchedTaskBranchMapping(task_id, _remote_branch) in
+        merge_result.matched_task_branch_mappings.iter()
+      {
+        let current_counter = found_task_count_by_id.entry(task_id.clone()).or_insert(0);
+
+        *current_counter += 1;
+      }
+    });
+
+    let not_found_user_task_mappings: Vec<UserTaskMapping> = found_task_count_by_id
+      // .keys()
+      .into_iter()
+      .filter(|(task_id, count)| {
+        println!("{} ---> {}", task_id, count);
+        return *count == 0 as usize;
+      })
+      .map(|(task_id, _count)| {
+        let task = task_by_id.get(&task_id).unwrap();
+        let user_id: String = task.assigned_phid.clone().unwrap();
+        let user = task_assignee_by_phid.get(&user_id).unwrap();
+
+        return UserTaskMapping(user.clone(), task.clone());
+      })
+      .collect();
+
+    return Ok(MergeAllReposOutput {
+      merge_all_outputs: merge_results,
+      not_found_user_task_mappings,
+      task_by_id,
+    });
+  }
+
+  pub async fn merge_for_repo(
+    &self,
+    repo_path: &str,
+    task_ids: &Vec<&str>,
+  ) -> ResultDynError<MergeAllOutput> {
+    println!("[Run] cd {}", repo_path);
+    exec(
+      &format!("cd {}", repo_path),
+      "Cannot git pull origin master",
+    )?;
+
     println!("[Run] git pull origin master");
     exec("git pull origin master", "Cannot git pull origin master")?;
 
@@ -53,92 +168,37 @@ impl DeploymentClient {
     println!("[Run] git branch -r");
     let remote_branches = exec("git branch -r", "Cannot get all remote branches")?;
 
-    let filtered_branch_mappings: Vec<MatchedTaskMapping> = remote_branches
+    let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> = remote_branches
       .split('\n')
       .flat_map(|remote_branch| {
         let remote_branch = remote_branch.trim().to_owned();
 
         return task_ids
-          .iter()
+          .into_iter()
           .map(|task_id| {
-            return MatchedTaskMapping(String::from(task_id.to_owned()), remote_branch.clone());
+            return MatchedTaskBranchMapping(
+              String::from(task_id.to_owned()),
+              remote_branch.clone(),
+            );
           })
-          .collect::<Vec<MatchedTaskMapping>>();
+          .collect::<Vec<MatchedTaskBranchMapping>>();
       })
-      .filter(|MatchedTaskMapping(task_id, remote_branch)| {
+      .filter(|MatchedTaskBranchMapping(task_id, remote_branch)| {
         return remote_branch.contains(&task_id[..]);
       })
       .collect();
 
-    println!("Branches to be merged");
+    let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
 
-    let tasks: Vec<PhabricatorTask> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
-
-    let task_by_id: HashMap<&str, &PhabricatorTask> =
-      tasks.iter().map(|task| (task.id.as_ref(), task)).collect();
-
-    let task_assignee_ids: Vec<&str> = tasks
-      .iter()
-      // For simplicity's sake, we can be sure that every task should
-      // have been assigned to an engineer.
-      .map(|task| task.assigned_phid.as_ref().unwrap().as_ref())
-      .collect();
-
-    let task_assignees: Vec<PhabricatorUser> = self
-      .phabricator
-      .get_users_by_phids(task_assignee_ids.iter().map(AsRef::as_ref).collect())
-      .await?;
-
-    let task_assignee_by_phid: HashMap<&str, &PhabricatorUser> = task_assignees
-      .iter()
-      .map(|user| (user.phid.as_ref(), user))
-      .collect();
-
-    for MatchedTaskMapping(task_id, remote_branch) in filtered_branch_mappings.iter() {
-      let task_id: &str = task_id.as_ref();
-
-      // Phabricator task id does not have prefix `T` as in `T1234`
-      let task = task_by_id.get(PhabricatorClient::clean_id(task_id));
-
-      if task.is_none() {
-        println!("Could not find task {} from phabricator", task_id);
-        continue;
-      }
-
-      let task = task.unwrap();
-      let assigned_phid: &str = task.assigned_phid.as_ref().unwrap();
-
-      // We can be sure task_assignee 100% exist because
-      // we construct task_assignees based on tasks.
-      let task_assignee = task_assignee_by_phid.get(assigned_phid).unwrap();
-
-      println!(
-        "{} - {}: {}",
-        task_id, task_assignee.username, remote_branch
-      );
-    }
-
-    println!("------------------------------------------");
-    println!("------------------------------------------");
-    println!("Tasks in master branch");
-
-    let task_in_masters = self.tasks_in_master_branch(&task_ids).await?;
-
-    for task_in_master in task_in_masters {
-      println!(
-        "{}: {}",
-        task_in_master.task_id, task_in_master.commit_message
-      );
-    }
-
-    println!("------------------------------------------");
-    println!("------------------------------------------");
-
-    for MatchedTaskMapping(_task_id, remote_branch) in filtered_branch_mappings.iter() {
+    for MatchedTaskBranchMapping(_task_id, remote_branch) in filtered_branch_mappings.iter() {
       self.merge(&remote_branch)?;
     }
 
-    return Ok(());
+    return Ok(MergeAllOutput {
+      tasks_in_master_branch,
+      matched_task_branch_mappings: filtered_branch_mappings,
+      repo_path: String::from(repo_path),
+    });
   }
 
   fn merge(&self, remote_branch: &str) -> ResultDynError<()> {
@@ -270,7 +330,7 @@ fn handle_command_output(output: std::process::Output) -> ResultDynError<String>
   return vec_to_string(output.stdout);
 }
 
-fn exec(command_str: &str, assertion_txt: &str) -> ResultDynError<String> {
+fn exec(command_str: &str, _assertion_txt: &str) -> ResultDynError<String> {
   let command_result = spawn_command_from_str(command_str, None, None)?.wait_with_output()?;
 
   if !command_result.stderr.is_empty() {
