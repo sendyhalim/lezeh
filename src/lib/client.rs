@@ -36,7 +36,7 @@ impl DeploymentClient {
       Some(cert_identity_config),
     )?;
 
-    let ghub = GithubClient::new(config.ghub.api_token);
+    let ghub = GithubClient::new(&config.ghub.api_token)?;
 
     return Ok(DeploymentClient {
       ghub,
@@ -205,15 +205,18 @@ impl DeploymentClient {
     return Ok(MergeAllOutput {
       tasks_in_master_branch,
       matched_task_branch_mappings: filtered_branch_mappings,
-      repo_path: repo_config.path,
+      repo_path: String::from(&repo_config.path),
     });
   }
 
   fn get_pull_request_title(&self, remote_branch: &str) -> ResultDynError<String> {
-    let commit_messages = exec(format!(
-      "git log --oneline --pretty=format:%s master..{}",
-      remote_branch
-    ))?;
+    let commit_messages = exec(
+      &format!(
+        "git log --oneline --pretty=format:%s master..{}",
+        remote_branch
+      ),
+      "Cannot print out git log to get pull request title",
+    )?;
 
     return commit_messages
       .split('\n')
@@ -221,16 +224,11 @@ impl DeploymentClient {
       .ok_or(failure::format_err!(
         "Failed to get pull request title from remote branch {}",
         remote_branch
-      ));
+      ))
+      .map(|pr_title| pr_title.to_owned());
   }
 
   async fn merge(&self, repo_config: &RepositoryConfig, remote_branch: &str) -> ResultDynError<()> {
-    let splitted = remote_branch
-      .split('/')
-      .map(String::from)
-      .collect::<Vec<String>>();
-    let local_branch = splitted.get(1).unwrap();
-
     println!("[{}] Creating PR...", remote_branch);
     let res_body: Value = self
       .ghub
