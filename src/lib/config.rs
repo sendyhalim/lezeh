@@ -15,8 +15,14 @@ pub struct PhabConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct GhubConfig {
+  pub api_token: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RepositoryConfig {
   pub path: String,
+  pub github_path: String, // For example: sendyhalim/foo
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +33,7 @@ pub struct DeploymentConfig {
 #[derive(Debug, Deserialize)]
 pub struct Config {
   pub phab: PhabConfig,
+  pub ghub: GhubConfig,
   pub deployment: DeploymentConfig,
 }
 

@@ -5,17 +5,22 @@ use std::process::Stdio;
 
 use futures::future::FutureExt;
 use futures::Future;
+use ghub::v3::client::GithubClient;
+use ghub::v3::pull_request as github_pull_request;
 use phab_lib::client::phabricator::CertIdentityConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
 use phab_lib::dto::Task;
 use phab_lib::dto::User;
+use serde_json::Value;
 
 use crate::config::Config;
+use crate::config::RepositoryConfig;
 use crate::types::ResultDynError;
 
 pub struct DeploymentClient {
   pub config: Config,
   phabricator: PhabricatorClient,
+  ghub: GithubClient,
 }
 
 impl DeploymentClient {
@@ -31,7 +36,10 @@ impl DeploymentClient {
       Some(cert_identity_config),
     )?;
 
+    let ghub = GithubClient::new(config.ghub.api_token);
+
     return Ok(DeploymentClient {
+      ghub,
       config,
       phabricator,
     });
@@ -98,7 +106,7 @@ impl DeploymentClient {
       .deployment
       .repositories
       .iter()
-      .map(|repo_config| return self.merge_for_repo(&repo_config.path, task_ids).boxed())
+      .map(|repo_config| return self.merge_for_repo(repo_config, task_ids).boxed())
       .collect();
 
     let merge_results = futures::future::join_all(futs).await;
@@ -129,7 +137,6 @@ impl DeploymentClient {
       // .keys()
       .into_iter()
       .filter(|(task_id, count)| {
-        println!("{} ---> {}", task_id, count);
         return *count == 0 as usize;
       })
       .map(|(task_id, _count)| {
@@ -150,12 +157,13 @@ impl DeploymentClient {
 
   pub async fn merge_for_repo(
     &self,
-    repo_path: &str,
+    repo_config: &RepositoryConfig,
     task_ids: &Vec<&str>,
   ) -> ResultDynError<MergeAllOutput> {
-    println!("[Run] cd {}", repo_path);
+    // TODO: This doesnt work
+    println!("[Run] cd {}", repo_config.path);
     exec(
-      &format!("cd {}", repo_path),
+      &format!("cd {}", repo_config.path),
       "Cannot git pull origin master",
     )?;
 
@@ -191,51 +199,75 @@ impl DeploymentClient {
     let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
 
     for MatchedTaskBranchMapping(_task_id, remote_branch) in filtered_branch_mappings.iter() {
-      self.merge(&remote_branch)?;
+      self.merge(repo_config, &remote_branch).await?;
     }
 
     return Ok(MergeAllOutput {
       tasks_in_master_branch,
       matched_task_branch_mappings: filtered_branch_mappings,
-      repo_path: String::from(repo_path),
+      repo_path: repo_config.path,
     });
   }
 
-  fn merge(&self, remote_branch: &str) -> ResultDynError<()> {
+  fn get_pull_request_title(&self, remote_branch: &str) -> ResultDynError<String> {
+    let commit_messages = exec(format!(
+      "git log --oneline --pretty=format:%s master..{}",
+      remote_branch
+    ))?;
+
+    return commit_messages
+      .split('\n')
+      .last()
+      .ok_or(failure::format_err!(
+        "Failed to get pull request title from remote branch {}",
+        remote_branch
+      ));
+  }
+
+  async fn merge(&self, repo_config: &RepositoryConfig, remote_branch: &str) -> ResultDynError<()> {
     let splitted = remote_branch
       .split('/')
       .map(String::from)
       .collect::<Vec<String>>();
-
     let local_branch = splitted.get(1).unwrap();
 
-    println!("[{}] Merging...", remote_branch);
+    println!("[{}] Creating PR...", remote_branch);
+    let res_body: Value = self
+      .ghub
+      .pull_request
+      .create(github_pull_request::CreatePullRequestInput {
+        title: &self.get_pull_request_title(remote_branch)?,
+        repo_path: &repo_config.github_path,
+        branch_name: remote_branch,
+        into_branch: "master",
+      })
+      .await?;
+    let pull_number: &str = &format!("{}", res_body["number"]);
 
-    let namespace = format!("[{}]", local_branch);
+    println!("[{}] Merging PR {}...", remote_branch, pull_number);
+    let merge_method = github_pull_request::GithubMergeMethod::Squash;
+    let res_body: Value = self
+      .ghub
+      .pull_request
+      .merge(github_pull_request::MergePullRequestInput {
+        repo_path: &repo_config.github_path,
+        pull_number,
+        merge_method,
+      })
+      .await?;
 
-    println!("{} git checkout {}", namespace, local_branch);
-    exec(
-      &format!("git checkout {}", local_branch),
-      &format!("{} Cannot checkout", namespace),
-    )?;
+    println!("[{}] Done merging PR {:?}", remote_branch, res_body);
 
-    println!("{} git rebase master", namespace);
-    exec(
-      "git rebase master",
-      &format!("{} Cannot rebase master", namespace),
-    )?;
+    let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(failure::err_msg(
+      "Failed to parse merge pull request 'merged' to bool",
+    ))?;
 
-    println!("{} git checkout master", namespace);
-    exec(
-      "git checkout master",
-      &format!("{} Cannot checkout master", namespace),
-    )?;
-
-    println!("{} git merge {} --ff-only", namespace, local_branch);
-    exec(
-      &format!("git merge {} --ff-only", local_branch),
-      &format!("{} Cannot checkout master", namespace),
-    )?;
+    if !merge_succeeded {
+      return Err(failure::format_err!(
+        "Failed to merge pull request {}",
+        remote_branch
+      ));
+    }
 
     return Ok(());
   }
