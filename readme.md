@@ -16,6 +16,17 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
     pkcs12_path: ...,
     host: yourphabricatorhost.com,
     pkcs12_password: ...,
+  },
+  ghub: {
+    # This is your github personal token,
+    # you need to register token with full repository write access.
+    api_token: abc123
+  },
+  deployment: {
+    repositories: [
+      {path: "/path/to/your/team/repo-a", github_path: "organization-name/foo"}
+      {path: "/path/to/your/team/repo-b", github_path: "organizationA-name/bar"}
+    ]
   }
 }
 ```
