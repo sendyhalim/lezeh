@@ -443,9 +443,9 @@ dependencies = [
 
 [[package]]
 name = "ghub"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8f91bd6e39fc94cfb0b9019e50f0652e5a8c3221c0209e8062a4700fb3b2238"
+checksum = "c84bc5f240d8ff25217248c63ac3d4325ccb99920f2510abf977d5991220bd56"
 dependencies = [
  "config",
  "env_logger",
@@ -683,7 +683,9 @@ dependencies = [
  "built",
  "clap",
  "config",
+ "env_logger",
  "failure",
+ "fake",
  "futures",
  "ghub",
  "phab-lib",
@@ -1404,9 +1406,9 @@ checksum = "6446ced80d6c486436db5c078dde11a9f73d42b57fb273121e160b84f63d894c"
 
 [[package]]
 name = "syn"
-version = "1.0.37"
+version = "1.0.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239f255b9e3429350f188c27b807fc9920a15eb9145230ff1a7d054c08fec319"
+checksum = "e69abc24912995b3038597a7a593be5053eb0fb44f3cc5beec0deb421790c1f4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1581,9 +1583,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2734b5a028fa697686f16c6d18c2c6a3c7e41513f9a213abb6754c4acb3c8d7"
+checksum = "d593f98af59ebc017c0648f0117525db358745a8894a8d684e185ba3f45954f9"
 dependencies = [
  "lazy_static",
 ]

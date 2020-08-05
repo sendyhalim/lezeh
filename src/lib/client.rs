@@ -3,8 +3,6 @@ use std::collections::VecDeque;
 use std::process::Command;
 use std::process::Stdio;
 
-use futures::future::FutureExt;
-use futures::Future;
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
 use phab_lib::client::phabricator::CertIdentityConfig;
@@ -78,7 +76,7 @@ impl DeploymentClient {
     let task_by_id: HashMap<String, Task> = tasks
       .iter()
       .map(|task| {
-        return (task.phid.clone(), task.clone());
+        return (task.id.clone(), task.clone());
       })
       .collect();
 
@@ -99,54 +97,18 @@ impl DeploymentClient {
       .map(|user| (user.phid.clone(), user))
       .collect();
 
-    let futs: Vec<
-      std::pin::Pin<Box<dyn Future<Output = ResultDynError<MergeAllOutput>> + std::marker::Send>>,
-    > = self
-      .config
-      .deployment
-      .repositories
-      .iter()
-      .map(|repo_config| return self.merge_for_repo(repo_config, task_ids).boxed())
-      .collect();
+    let mut merge_results: Vec<ResultDynError<MergeAllOutput>> = vec![];
 
-    let merge_results = futures::future::join_all(futs).await;
+    for repo_config in self.config.deployment.repositories.iter() {
+      let merge_result = self.merge_for_repo(repo_config, task_ids).await;
+      merge_results.push(merge_result);
+    }
 
     // Make sure that all is well
     let merge_results: Result<Vec<MergeAllOutput>, _> = merge_results.into_iter().collect();
     let merge_results = merge_results?;
-
-    // Start filtering all the not found tasks
-    let mut found_task_count_by_id: HashMap<String, usize> = tasks
-      .iter()
-      .map(|task| {
-        return (task.phid.clone(), 0);
-      })
-      .collect();
-
-    merge_results.iter().for_each(|merge_result| {
-      for MatchedTaskBranchMapping(task_id, _remote_branch) in
-        merge_result.matched_task_branch_mappings.iter()
-      {
-        let current_counter = found_task_count_by_id.entry(task_id.clone()).or_insert(0);
-
-        *current_counter += 1;
-      }
-    });
-
-    let not_found_user_task_mappings: Vec<UserTaskMapping> = found_task_count_by_id
-      // .keys()
-      .into_iter()
-      .filter(|(task_id, count)| {
-        return *count == 0 as usize;
-      })
-      .map(|(task_id, _count)| {
-        let task = task_by_id.get(&task_id).unwrap();
-        let user_id: String = task.assigned_phid.clone().unwrap();
-        let user = task_assignee_by_phid.get(&user_id).unwrap();
-
-        return UserTaskMapping(user.clone(), task.clone());
-      })
-      .collect();
+    let not_found_user_task_mappings =
+      TaskUtil::find_not_found_tasks(&merge_results, &task_by_id, &task_assignee_by_phid);
 
     return Ok(MergeAllReposOutput {
       merge_all_outputs: merge_results,
@@ -176,26 +138,8 @@ impl DeploymentClient {
     println!("[Run] git branch -r");
     let remote_branches = exec("git branch -r", "Cannot get all remote branches")?;
 
-    let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> = remote_branches
-      .split('\n')
-      .flat_map(|remote_branch| {
-        let remote_branch = remote_branch.trim().to_owned();
-
-        return task_ids
-          .into_iter()
-          .map(|task_id| {
-            return MatchedTaskBranchMapping(
-              String::from(task_id.to_owned()),
-              remote_branch.clone(),
-            );
-          })
-          .collect::<Vec<MatchedTaskBranchMapping>>();
-      })
-      .filter(|MatchedTaskBranchMapping(task_id, remote_branch)| {
-        return remote_branch.contains(&task_id[..]);
-      })
-      .collect();
-
+    let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
+      TaskUtil::create_matching_task_and_branch(task_ids, &remote_branches.split('\n').collect());
     let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
 
     for MatchedTaskBranchMapping(_task_id, remote_branch) in filtered_branch_mappings.iter() {
@@ -229,30 +173,35 @@ impl DeploymentClient {
   }
 
   async fn merge(&self, repo_config: &RepositoryConfig, remote_branch: &str) -> ResultDynError<()> {
-    println!("[{}] Creating PR...", remote_branch);
-    let res_body: Value = self
-      .ghub
-      .pull_request
-      .create(github_pull_request::CreatePullRequestInput {
-        title: &self.get_pull_request_title(remote_branch)?,
-        repo_path: &repo_config.github_path,
-        branch_name: remote_branch,
-        into_branch: "master",
-      })
-      .await?;
+    // Create PR
+    // -----------------------
+    let branch_name = remote_branch.split('/').last().ok_or(failure::format_err!(
+      "Could not get branch name from {}",
+      remote_branch
+    ))?;
+
+    let input = github_pull_request::CreatePullRequestInput {
+      title: &self.get_pull_request_title(remote_branch)?,
+      repo_path: &repo_config.github_path,
+      branch_name,
+      into_branch: "master",
+    };
+
+    println!("[{}] Creating PR {:?}...", remote_branch, input);
+    let res_body: Value = self.ghub.pull_request.create(input).await?;
+    println!("[{}] Done creating PR {:?}", remote_branch, res_body);
     let pull_number: &str = &format!("{}", res_body["number"]);
 
-    println!("[{}] Merging PR {}...", remote_branch, pull_number);
+    // Merge
+    // -----------------------
     let merge_method = github_pull_request::GithubMergeMethod::Squash;
-    let res_body: Value = self
-      .ghub
-      .pull_request
-      .merge(github_pull_request::MergePullRequestInput {
-        repo_path: &repo_config.github_path,
-        pull_number,
-        merge_method,
-      })
-      .await?;
+    let input = github_pull_request::MergePullRequestInput {
+      repo_path: &repo_config.github_path,
+      pull_number,
+      merge_method,
+    };
+    println!("[{}] Merging PR {:?}...", remote_branch, input);
+    let res_body: Value = self.ghub.pull_request.merge(input).await?;
 
     println!("[{}] Done merging PR {:?}", remote_branch, res_body);
 
@@ -368,4 +317,156 @@ fn exec(command_str: &str, _assertion_txt: &str) -> ResultDynError<String> {
   }
 
   return vec_to_string(command_result.stdout);
+}
+
+// TODO: Move to another module
+struct TaskUtil;
+
+impl TaskUtil {
+  fn create_matching_task_and_branch(
+    task_ids: &Vec<&str>,
+    remote_branches: &Vec<&str>,
+  ) -> Vec<MatchedTaskBranchMapping> {
+    return remote_branches
+      .iter()
+      .flat_map(|remote_branch| {
+        let remote_branch = remote_branch.trim().to_owned();
+
+        return task_ids
+          .into_iter()
+          .map(|task_id| {
+            return MatchedTaskBranchMapping(
+              String::from(task_id.to_owned()),
+              remote_branch.clone(),
+            );
+          })
+          .collect::<Vec<MatchedTaskBranchMapping>>();
+      })
+      .filter(|MatchedTaskBranchMapping(task_id, remote_branch)| {
+        return remote_branch.contains(&task_id[..]);
+      })
+      .collect();
+  }
+
+  fn find_not_found_tasks(
+    merge_results: &Vec<MergeAllOutput>,
+    task_by_id: &HashMap<String, Task>,
+    task_assignee_by_phid: &HashMap<String, User>,
+  ) -> Vec<UserTaskMapping> {
+    // Start filtering all the not found tasks
+    let mut found_task_count_by_id: HashMap<String, usize> = task_by_id
+      .values()
+      .into_iter()
+      .map(|task| {
+        return (task.id.clone(), 0);
+      })
+      .collect();
+
+    merge_results.iter().for_each(|merge_result| {
+      for MatchedTaskBranchMapping(task_id, _remote_branch) in
+        merge_result.matched_task_branch_mappings.iter()
+      {
+        let current_counter = found_task_count_by_id.get_mut(task_id).unwrap();
+
+        *current_counter += 1;
+      }
+    });
+
+    let not_found_user_task_mappings: Vec<UserTaskMapping> = found_task_count_by_id
+      // .keys()
+      .into_iter()
+      .filter(|(_task_id, count)| {
+        return *count == 0 as usize;
+      })
+      .map(|(task_id, _count)| {
+        let task = task_by_id.get(&task_id).unwrap();
+        let user_id: String = task.assigned_phid.clone().unwrap();
+        let user = task_assignee_by_phid.get(&user_id).unwrap();
+
+        return UserTaskMapping(user.clone(), task.clone());
+      })
+      .collect();
+
+    return not_found_user_task_mappings;
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::*;
+
+  mod find_not_found_tasks {
+    use super::*;
+    use fake::Fake;
+    use fake::Faker;
+
+    #[test]
+    fn it_should_return_not_found_tasks() {
+      let mut task_1: Task = Faker.fake();
+      task_1.id = "1234".into();
+      task_1.assigned_phid = Some("haha".into());
+
+      let mut task_2: Task = Faker.fake();
+      task_2.id = "3333".into();
+      task_2.assigned_phid = Some("wut".into());
+
+      let task_by_id: HashMap<String, Task> = vec![task_1.clone(), task_2.clone()]
+        .iter()
+        .map(|task| {
+          return (task.id.clone(), task.clone());
+        })
+        .collect();
+
+      let mut user_1: User = Faker.fake();
+      user_1.phid = task_1.assigned_phid.unwrap().clone();
+
+      let mut user_2: User = Faker.fake();
+      user_2.phid = "wut".into();
+
+      let task_assignee_by_phid: HashMap<String, User> = vec![user_1, user_2]
+        .iter()
+        .map(|user| {
+          return (user.phid.clone(), user.clone());
+        })
+        .collect();
+
+      let merge_results: Vec<MergeAllOutput> = vec![MergeAllOutput {
+        repo_path: String::from("/foo"),
+        tasks_in_master_branch: vec![],
+        matched_task_branch_mappings: vec![MatchedTaskBranchMapping(
+          "3333".into(),
+          "origin/bar_T3333_foo".into(),
+        )],
+      }];
+
+      let not_found_user_task_mappings =
+        TaskUtil::find_not_found_tasks(&merge_results, &task_by_id, &task_assignee_by_phid);
+
+      assert_eq!(1, not_found_user_task_mappings.len());
+    }
+  }
+
+  mod create_matching_task_and_branch {
+    use super::*;
+
+    #[test]
+    fn it_should_create_matching_branch() {
+      let matched_task_branch_mappings = TaskUtil::create_matching_task_and_branch(
+        &vec!["1234", "444"],
+        &vec!["hmm_123", "hey1234", "445"],
+      );
+
+      let expected_mappings = vec![MatchedTaskBranchMapping("1234".into(), "hey1234".into())];
+
+      assert_eq!(1, matched_task_branch_mappings.len());
+
+      for i in 0..expected_mappings.len() {
+        let expected_mapping = expected_mappings.get(i).unwrap();
+        let result_mapping = matched_task_branch_mappings.get(i).unwrap();
+
+        assert_eq!(expected_mapping.0, result_mapping.0);
+        assert_eq!(expected_mapping.1, result_mapping.1);
+      }
+    }
+  }
 }

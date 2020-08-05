@@ -14,6 +14,8 @@ type ResultDynError<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main]
 async fn main() -> ResultDynError<()> {
+  env_logger::init();
+
   // Default config
   let home_dir = std::env::var("HOME").unwrap();
   let config = Config::new(format!("{}/.lezeh", home_dir))?;
@@ -67,7 +69,7 @@ async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDy
     println!("================================");
 
     for lib::client::UserTaskMapping(user, task) in output.not_found_user_task_mappings.iter() {
-      println!("{}: {}", task.phid, user.username);
+      println!("{}: {}", task.id, user.username);
     }
 
     println!("");
@@ -78,7 +80,7 @@ async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDy
       println!("### Repo {}", repo_merge_output.repo_path);
       println!("--------------------------------");
 
-      println!("Tasks in master branch");
+      println!("#### Tasks in master branch");
       for task_in_master_branch in repo_merge_output.tasks_in_master_branch.iter() {
         println!(
           "{}: {}",
@@ -86,7 +88,7 @@ async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDy
         );
       }
 
-      println!("Matched tasks");
+      println!("#### Matched tasks");
       for lib::client::MatchedTaskBranchMapping(task_id, remote_branch) in
         repo_merge_output.matched_task_branch_mappings.iter()
       {

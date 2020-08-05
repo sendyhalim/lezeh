@@ -22,7 +22,9 @@ serde = { version = "1.0.60", features = ["derive"] }
 serde_json = { version = "1.0" }
 futures = { version = "0.3" }
 tokio = { version = "0.2" }
+env_logger = { version = "0.7" }
 ghub = { version = "0.1" }
+fake = { version = "2.2", features = ["derive", "chrono"] }
 
 [build-dependencies]
 built = "0.4"
