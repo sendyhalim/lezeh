@@ -366,7 +366,9 @@ impl TaskUtil {
       for MatchedTaskBranchMapping(task_id, _remote_branch) in
         merge_result.matched_task_branch_mappings.iter()
       {
-        let current_counter = found_task_count_by_id.get_mut(task_id).unwrap();
+        let current_counter = found_task_count_by_id
+          .get_mut(PhabricatorClient::clean_id(task_id))
+          .unwrap();
 
         *current_counter += 1;
       }

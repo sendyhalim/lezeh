@@ -69,7 +69,7 @@ async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDy
     println!("================================");
 
     for lib::client::UserTaskMapping(user, task) in output.not_found_user_task_mappings.iter() {
-      println!("{}: {}", task.id, user.username);
+      println!("T{}: {}", task.id, user.username);
     }
 
     println!("");
