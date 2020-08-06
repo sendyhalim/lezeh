@@ -444,8 +444,6 @@ dependencies = [
 [[package]]
 name = "ghub"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c84bc5f240d8ff25217248c63ac3d4325ccb99920f2510abf977d5991220bd56"
 dependencies = [
  "config",
  "env_logger",
@@ -688,6 +686,7 @@ dependencies = [
  "fake",
  "futures",
  "ghub",
+ "log",
  "phab-lib",
  "serde 1.0.114",
  "serde_json",

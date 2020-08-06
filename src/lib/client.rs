@@ -123,11 +123,11 @@ impl DeploymentClient {
     task_ids: &Vec<&str>,
   ) -> ResultDynError<MergeAllOutput> {
     // TODO: This doesnt work
-    println!("[Run] cd {}", repo_config.path);
-    exec(
-      &format!("cd {}", repo_config.path),
-      "Cannot git pull origin master",
-    )?;
+    // println!("[Run] cd {}", repo_config.path);
+    // exec(
+    // &format!("cd /home/cermati/development/athena/midas"),
+    // "Cannot git pull origin master",
+    // )?;
 
     println!("[Run] git pull origin master");
     exec("git pull origin master", "Cannot git pull origin master")?;
@@ -189,7 +189,9 @@ impl DeploymentClient {
 
     println!("[{}] Creating PR {:?}...", remote_branch, input);
     let res_body: Value = self.ghub.pull_request.create(input).await?;
-    println!("[{}] Done creating PR {:?}", remote_branch, res_body);
+    println!("[{}] Done creating PR", remote_branch);
+    log::debug!("Response body {:?}", res_body);
+
     let pull_number: &str = &format!("{}", res_body["number"]);
 
     // Merge
@@ -202,8 +204,8 @@ impl DeploymentClient {
     };
     println!("[{}] Merging PR {:?}...", remote_branch, input);
     let res_body: Value = self.ghub.pull_request.merge(input).await?;
-
-    println!("[{}] Done merging PR {:?}", remote_branch, res_body);
+    println!("[{}] Done merging PR", remote_branch);
+    log::debug!("Response body {:?}", res_body);
 
     let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(failure::err_msg(
       "Failed to parse merge pull request 'merged' to bool",
