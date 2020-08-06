@@ -132,6 +132,11 @@ impl DeploymentClient {
     println!("[Run] git pull origin master");
     exec("git pull origin master", "Cannot git pull origin master")?;
 
+    // This will sync deleted branch remotely, sometimes we've deleted remote branch
+    // but it still appears locally under origin/<branchname> when running `git branch -r`.
+    println!("[Run] git remote prune origin");
+    exec("git remote prune origin", "Cannot git remote prune origin")?;
+
     println!("[Run] git fetch --all");
     exec("git fetch --all", "Cannot git fetch remote")?;
 
