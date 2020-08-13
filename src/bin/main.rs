@@ -3,7 +3,7 @@ use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 
-use lib::client::DeploymentClient;
+use lib::client::GlobalDeploymentClient;
 use lib::config::Config;
 
 pub mod built_info {
@@ -52,7 +52,7 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
 }
 
 async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
-  let deployment_client = DeploymentClient::new(config)?;
+  let deployment_client = GlobalDeploymentClient::new(config)?;
 
   if let Some(deployment_cli) = cli.subcommand_matches("merge-all") {
     let task_ids = deployment_cli

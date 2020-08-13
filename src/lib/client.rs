@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::process::Command;
 use std::process::Stdio;
+use std::sync::Arc;
 
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
@@ -12,35 +11,49 @@ use phab_lib::dto::Task;
 use phab_lib::dto::User;
 use serde_json::Value;
 
+use crate::command;
+use crate::command::PresetCommand;
 use crate::config::Config;
 use crate::config::RepositoryConfig;
 use crate::types::ResultDynError;
 
-pub struct DeploymentClient {
+pub struct GlobalDeploymentClient {
   pub config: Config,
-  phabricator: PhabricatorClient,
-  ghub: GithubClient,
+  phabricator: Arc<PhabricatorClient>,
+  ghub: Arc<GithubClient>,
+  repository_deployment_clients: Vec<RepositoryDeploymentClient>,
 }
 
-impl DeploymentClient {
-  pub fn new(config: Config) -> ResultDynError<DeploymentClient> {
+impl GlobalDeploymentClient {
+  pub fn new(config: Config) -> ResultDynError<GlobalDeploymentClient> {
     let cert_identity_config = CertIdentityConfig {
       pkcs12_path: config.phab.pkcs12_path.clone(),
       pkcs12_password: config.phab.pkcs12_password.clone(),
     };
 
-    let phabricator = PhabricatorClient::new(PhabricatorClientConfig {
+    let phabricator = Arc::new(PhabricatorClient::new(PhabricatorClientConfig {
       host: config.phab.host.clone(),
       api_token: config.phab.api_token.clone(),
       cert_identity_config: Some(cert_identity_config),
-    })?;
+    })?);
 
-    let ghub = GithubClient::new(&config.ghub.api_token)?;
+    let ghub = Arc::new(GithubClient::new(&config.ghub.api_token)?);
 
-    return Ok(DeploymentClient {
+    let repository_deployment_clients = config
+      .deployment
+      .repositories
+      .clone()
+      .into_iter()
+      .map(|repo_config| {
+        return RepositoryDeploymentClient::new(repo_config.clone(), ghub.clone());
+      })
+      .collect();
+
+    return Ok(GlobalDeploymentClient {
       ghub,
       config,
       phabricator,
+      repository_deployment_clients,
     });
   }
 }
@@ -71,7 +84,7 @@ pub struct TaskInMasterBranch {
   pub task_id: String,
 }
 
-impl DeploymentClient {
+impl GlobalDeploymentClient {
   pub async fn merge_all_repos(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllReposOutput> {
     let tasks: Vec<Task> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
     let task_by_id: HashMap<String, Task> = tasks
@@ -100,8 +113,9 @@ impl DeploymentClient {
 
     let mut merge_results: Vec<ResultDynError<MergeAllOutput>> = vec![];
 
-    for repo_config in self.config.deployment.repositories.iter() {
-      let merge_result = self.merge_for_repo(repo_config, task_ids).await;
+    for deployment_client in self.repository_deployment_clients.iter() {
+      let merge_result = deployment_client.merge_all_tasks(task_ids).await;
+
       merge_results.push(merge_result);
     }
 
@@ -117,12 +131,28 @@ impl DeploymentClient {
       task_by_id,
     });
   }
+}
 
-  pub async fn merge_for_repo(
-    &self,
-    repo_config: &RepositoryConfig,
-    task_ids: &Vec<&str>,
-  ) -> ResultDynError<MergeAllOutput> {
+struct RepositoryDeploymentClient {
+  pub config: RepositoryConfig,
+  ghub: Arc<GithubClient>,
+  preset_command: PresetCommand,
+}
+
+impl RepositoryDeploymentClient {
+  fn new(config: RepositoryConfig, ghub: Arc<GithubClient>) -> RepositoryDeploymentClient {
+    return RepositoryDeploymentClient {
+      config: config.clone(),
+      ghub,
+      preset_command: PresetCommand {
+        working_dir: config.path.clone(),
+      },
+    };
+  }
+}
+
+impl RepositoryDeploymentClient {
+  pub async fn merge_all_tasks(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllOutput> {
     // TODO: This doesnt work
     // println!("[Run] cd {}", repo_config.path);
     // exec(
@@ -131,36 +161,44 @@ impl DeploymentClient {
     // )?;
 
     println!("[Run] git pull origin master");
-    exec("git pull origin master", "Cannot git pull origin master")?;
+    self
+      .preset_command
+      .exec("git pull origin master", "Cannot git pull origin master")?;
 
     // This will sync deleted branch remotely, sometimes we've deleted remote branch
     // but it still appears locally under origin/<branchname> when running `git branch -r`.
     println!("[Run] git remote prune origin");
-    exec("git remote prune origin", "Cannot git remote prune origin")?;
+    self
+      .preset_command
+      .exec("git remote prune origin", "Cannot git remote prune origin")?;
 
     println!("[Run] git fetch --all");
-    exec("git fetch --all", "Cannot git fetch remote")?;
+    self
+      .preset_command
+      .exec("git fetch --all", "Cannot git fetch remote")?;
 
     println!("[Run] git branch -r");
-    let remote_branches = exec("git branch -r", "Cannot get all remote branches")?;
+    let remote_branches = self
+      .preset_command
+      .exec("git branch -r", "Cannot get all remote branches")?;
 
     let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
       TaskUtil::create_matching_task_and_branch(task_ids, &remote_branches.split('\n').collect());
     let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
 
     for MatchedTaskBranchMapping(_task_id, remote_branch) in filtered_branch_mappings.iter() {
-      self.merge(repo_config, &remote_branch).await?;
+      self.merge(&remote_branch).await?;
     }
 
     return Ok(MergeAllOutput {
       tasks_in_master_branch,
       matched_task_branch_mappings: filtered_branch_mappings,
-      repo_path: String::from(&repo_config.path),
+      repo_path: self.config.path.clone(),
     });
   }
 
   fn get_pull_request_title(&self, remote_branch: &str) -> ResultDynError<String> {
-    let commit_messages = exec(
+    let commit_messages = self.preset_command.exec(
       &format!(
         "git log --oneline --pretty=format:%s master..{}",
         remote_branch
@@ -178,7 +216,7 @@ impl DeploymentClient {
       .map(|pr_title| pr_title.to_owned());
   }
 
-  async fn merge(&self, repo_config: &RepositoryConfig, remote_branch: &str) -> ResultDynError<()> {
+  async fn merge(&self, remote_branch: &str) -> ResultDynError<()> {
     // Create PR
     // -----------------------
     let branch_name = remote_branch.split('/').last().ok_or(failure::format_err!(
@@ -188,7 +226,7 @@ impl DeploymentClient {
 
     let input = github_pull_request::CreatePullRequestInput {
       title: &self.get_pull_request_title(remote_branch)?,
-      repo_path: &repo_config.github_path,
+      repo_path: &self.config.github_path,
       branch_name,
       into_branch: "master",
     };
@@ -204,7 +242,7 @@ impl DeploymentClient {
     // -----------------------
     let merge_method = github_pull_request::GithubMergeMethod::Squash;
     let input = github_pull_request::MergePullRequestInput {
-      repo_path: &repo_config.github_path,
+      repo_path: &self.config.github_path,
       pull_number,
       merge_method,
     };
@@ -231,7 +269,11 @@ impl DeploymentClient {
     &self,
     task_ids: &Vec<&str>,
   ) -> ResultDynError<Vec<TaskInMasterBranch>> {
-    let git_log_handle = spawn_command_from_str("git log --oneline", None, Some(Stdio::piped()))?;
+    let git_log_handle = self.preset_command.spawn_command_from_str(
+      "git log --oneline",
+      None,
+      Some(Stdio::piped()),
+    )?;
 
     let grep_regex_input = task_ids.iter().fold("".to_owned(), |acc, task_id| {
       if acc.is_empty() {
@@ -241,14 +283,16 @@ impl DeploymentClient {
       return format!("{}\\|{}", acc, task_id);
     });
 
-    let grep_output = spawn_command_from_str(
-      &format!("grep {}", grep_regex_input),
-      Some(git_log_handle.stdout.unwrap().into()),
-      None,
-    )?
-    .wait_with_output()?;
+    let grep_output = self
+      .preset_command
+      .spawn_command_from_str(
+        &format!("grep {}", grep_regex_input),
+        Some(git_log_handle.stdout.unwrap().into()),
+        None,
+      )?
+      .wait_with_output()?;
 
-    let grep_output = handle_command_output(grep_output)?;
+    let grep_output = command::handle_command_output(grep_output)?;
     let commit_messages: Vec<&str> = grep_output.lines().collect();
 
     return Ok(
@@ -273,58 +317,6 @@ impl DeploymentClient {
         .collect(),
     );
   }
-}
-
-fn spawn_command_from_str(
-  command_str: &str,
-  stdin: Option<Stdio>,
-  stdout: Option<Stdio>,
-) -> ResultDynError<std::process::Child> {
-  let mut command_parts = command_str.split(' ').collect::<VecDeque<&str>>();
-
-  let command = command_parts
-    .pop_front()
-    .ok_or(format!("Invalid command: {}", command_str))
-    .map_err(failure::err_msg)?;
-
-  let handle = Command::new(command)
-    .args(command_parts)
-    .stdin(stdin.unwrap_or(Stdio::null()))
-    .stdout(stdout.unwrap_or(Stdio::piped()))
-    .spawn()?;
-
-  return Ok(handle);
-}
-
-fn vec_to_string(v: Vec<u8>) -> ResultDynError<String> {
-  return std::str::from_utf8(&v)
-    .map(String::from)
-    .map_err(failure::err_msg);
-}
-
-fn stderr_to_err(stderr: Vec<u8>) -> ResultDynError<String> {
-  let output_err = vec_to_string(stderr)?;
-
-  return Err(failure::err_msg(output_err));
-}
-
-fn handle_command_output(output: std::process::Output) -> ResultDynError<String> {
-  if !output.stderr.is_empty() {
-    // Convert explicitly to Err.
-    return stderr_to_err(output.stderr);
-  }
-
-  return vec_to_string(output.stdout);
-}
-
-fn exec(command_str: &str, _assertion_txt: &str) -> ResultDynError<String> {
-  let command_result = spawn_command_from_str(command_str, None, None)?.wait_with_output()?;
-
-  if !command_result.stderr.is_empty() {
-    return stderr_to_err(command_result.stderr);
-  }
-
-  return vec_to_string(command_result.stdout);
 }
 
 // TODO: Move to another module
