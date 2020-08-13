@@ -59,15 +59,15 @@ impl GlobalDeploymentClient {
 }
 
 #[derive(Debug)]
-pub struct MergeAllOutput {
+pub struct MergeAllTasksOutput {
   pub repo_path: String,
   pub tasks_in_master_branch: Vec<TaskInMasterBranch>,
   pub matched_task_branch_mappings: Vec<MatchedTaskBranchMapping>,
 }
 
 #[derive(Debug)]
-pub struct MergeAllReposOutput {
-  pub merge_all_outputs: Vec<MergeAllOutput>,
+pub struct MergeFeatureBranchesOutput {
+  pub merge_all_tasks_outputs: Vec<MergeAllTasksOutput>,
   pub task_by_id: HashMap<String, Task>,
   pub not_found_user_task_mappings: Vec<UserTaskMapping>,
 }
@@ -85,7 +85,10 @@ pub struct TaskInMasterBranch {
 }
 
 impl GlobalDeploymentClient {
-  pub async fn merge_all_repos(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllReposOutput> {
+  pub async fn merge_feature_branches(
+    &self,
+    task_ids: &Vec<&str>,
+  ) -> ResultDynError<MergeFeatureBranchesOutput> {
     let tasks: Vec<Task> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
     let task_by_id: HashMap<String, Task> = tasks
       .iter()
@@ -111,7 +114,7 @@ impl GlobalDeploymentClient {
       .map(|user| (user.phid.clone(), user))
       .collect();
 
-    let mut merge_results: Vec<ResultDynError<MergeAllOutput>> = vec![];
+    let mut merge_results: Vec<ResultDynError<MergeAllTasksOutput>> = vec![];
 
     for deployment_client in self.repository_deployment_clients.iter() {
       let merge_result = deployment_client.merge_all_tasks(task_ids).await;
@@ -120,13 +123,13 @@ impl GlobalDeploymentClient {
     }
 
     // Make sure that all is well
-    let merge_results: Result<Vec<MergeAllOutput>, _> = merge_results.into_iter().collect();
+    let merge_results: Result<Vec<MergeAllTasksOutput>, _> = merge_results.into_iter().collect();
     let merge_results = merge_results?;
     let not_found_user_task_mappings =
       TaskUtil::find_not_found_tasks(&merge_results, &task_by_id, &task_assignee_by_phid);
 
-    return Ok(MergeAllReposOutput {
-      merge_all_outputs: merge_results,
+    return Ok(MergeFeatureBranchesOutput {
+      merge_all_tasks_outputs: merge_results,
       not_found_user_task_mappings,
       task_by_id,
     });
@@ -152,7 +155,7 @@ impl RepositoryDeploymentClient {
 }
 
 impl RepositoryDeploymentClient {
-  pub async fn merge_all_tasks(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllOutput> {
+  pub async fn merge_all_tasks(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllTasksOutput> {
     // TODO: This doesnt work
     // println!("[Run] cd {}", repo_config.path);
     // exec(
@@ -190,7 +193,7 @@ impl RepositoryDeploymentClient {
       self.merge(&remote_branch).await?;
     }
 
-    return Ok(MergeAllOutput {
+    return Ok(MergeAllTasksOutput {
       tasks_in_master_branch,
       matched_task_branch_mappings: filtered_branch_mappings,
       repo_path: self.config.path.clone(),
@@ -349,7 +352,7 @@ impl TaskUtil {
   }
 
   fn find_not_found_tasks(
-    merge_results: &Vec<MergeAllOutput>,
+    merge_results: &Vec<MergeAllTasksOutput>,
     task_by_id: &HashMap<String, Task>,
     task_assignee_by_phid: &HashMap<String, User>,
   ) -> Vec<UserTaskMapping> {
@@ -432,7 +435,7 @@ mod test {
         })
         .collect();
 
-      let merge_results: Vec<MergeAllOutput> = vec![MergeAllOutput {
+      let merge_results: Vec<MergeAllTasksOutput> = vec![MergeAllTasksOutput {
         repo_path: String::from("/foo"),
         tasks_in_master_branch: vec![],
         matched_task_branch_mappings: vec![MatchedTaskBranchMapping(

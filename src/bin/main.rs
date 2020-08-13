@@ -45,8 +45,8 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
     .setting(clap::AppSettings::ArgRequiredElseHelp)
     .about("deployment cli")
     .subcommand(
-      SubCommand::with_name("merge-all")
-        .about("Rebase and merge all task ids")
+      SubCommand::with_name("merge-feature-branches")
+        .about("Rebase and merge all feature branches for all repos in the config based on the given task ids")
         .arg(task_id_args),
     );
 }
@@ -54,14 +54,14 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
 async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
   let deployment_client = GlobalDeploymentClient::new(config)?;
 
-  if let Some(deployment_cli) = cli.subcommand_matches("merge-all") {
+  if let Some(deployment_cli) = cli.subcommand_matches("merge-feature-branches") {
     let task_ids = deployment_cli
       .values_of("task_ids")
       .unwrap()
       .map(Into::into)
       .collect();
 
-    let output = deployment_client.merge_all_repos(&task_ids).await?;
+    let output = deployment_client.merge_feature_branches(&task_ids).await?;
 
     println!("# Merge stats");
     println!("## Not found task ids");
@@ -76,7 +76,7 @@ async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDy
     println!("## Repo merge stats");
     println!("================================");
     println!("================================");
-    for repo_merge_output in output.merge_all_outputs.iter() {
+    for repo_merge_output in output.merge_all_tasks_outputs.iter() {
       println!("### Repo {}", repo_merge_output.repo_path);
       println!("--------------------------------");
 
