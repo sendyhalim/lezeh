@@ -5,7 +5,8 @@ use std::process::Stdio;
 
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
-use phab_lib::client::phabricator::CertIdentityConfig;
+use phab_lib::client::config::CertIdentityConfig;
+use phab_lib::client::config::PhabricatorClientConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
 use phab_lib::dto::Task;
 use phab_lib::dto::User;
@@ -24,15 +25,15 @@ pub struct DeploymentClient {
 impl DeploymentClient {
   pub fn new(config: Config) -> ResultDynError<DeploymentClient> {
     let cert_identity_config = CertIdentityConfig {
-      pkcs12_path: config.phab.pkcs12_path.as_ref(),
-      pkcs12_password: config.phab.pkcs12_password.as_ref(),
+      pkcs12_path: config.phab.pkcs12_path.clone(),
+      pkcs12_password: config.phab.pkcs12_password.clone(),
     };
 
-    let phabricator = PhabricatorClient::new(
-      &config.phab.host,
-      &config.phab.api_token,
-      Some(cert_identity_config),
-    )?;
+    let phabricator = PhabricatorClient::new(PhabricatorClientConfig {
+      host: config.phab.host.clone(),
+      api_token: config.phab.api_token.clone(),
+      cert_identity_config: Some(cert_identity_config),
+    })?;
 
     let ghub = GithubClient::new(&config.ghub.api_token)?;
 
