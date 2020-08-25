@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
+use ghub::v3::pull_request::GithubMergeMethod;
 use phab_lib::client::config::CertIdentityConfig;
 use phab_lib::client::config::PhabricatorClientConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
@@ -21,7 +22,7 @@ pub struct GlobalDeploymentClient {
   pub config: Config,
   phabricator: Arc<PhabricatorClient>,
   ghub: Arc<GithubClient>,
-  repository_deployment_clients: Vec<RepositoryDeploymentClient>,
+  repository_deployment_client_by_key: HashMap<String, RepositoryDeploymentClient>,
 }
 
 impl GlobalDeploymentClient {
@@ -39,13 +40,16 @@ impl GlobalDeploymentClient {
 
     let ghub = Arc::new(GithubClient::new(&config.ghub.api_token)?);
 
-    let repository_deployment_clients = config
+    let repository_deployment_client_by_key: HashMap<String, RepositoryDeploymentClient> = config
       .deployment
       .repositories
       .clone()
       .into_iter()
       .map(|repo_config| {
-        return RepositoryDeploymentClient::new(repo_config.clone(), ghub.clone());
+        return (
+          repo_config.clone().key,
+          RepositoryDeploymentClient::new(repo_config.clone(), ghub.clone()),
+        );
       })
       .collect();
 
@@ -53,7 +57,7 @@ impl GlobalDeploymentClient {
       ghub,
       config,
       phabricator,
-      repository_deployment_clients,
+      repository_deployment_client_by_key,
     });
   }
 }
@@ -85,6 +89,19 @@ pub struct TaskInMasterBranch {
 }
 
 impl GlobalDeploymentClient {
+  pub async fn deploy(&self, repo_key: &str, scheme_key: &str) -> ResultDynError<()> {
+    let repo_deployment_client = self
+      .repository_deployment_client_by_key
+      .get(repo_key)
+      .ok_or_else(|| {
+        return failure::err_msg(format!("Invalid repo key {}", repo_key));
+      })?;
+
+    return repo_deployment_client
+      .deploy(scheme_key, GithubMergeMethod::Merge)
+      .await;
+  }
+
   pub async fn merge_feature_branches(
     &self,
     task_ids: &Vec<&str>,
@@ -116,7 +133,7 @@ impl GlobalDeploymentClient {
 
     let mut merge_results: Vec<ResultDynError<MergeAllTasksOutput>> = vec![];
 
-    for deployment_client in self.repository_deployment_clients.iter() {
+    for deployment_client in self.repository_deployment_client_by_key.values() {
       let merge_result = deployment_client.merge_all_tasks(task_ids).await;
 
       merge_results.push(merge_result);
@@ -155,13 +172,80 @@ impl RepositoryDeploymentClient {
 }
 
 impl RepositoryDeploymentClient {
+  pub async fn merge_remote_branch(
+    &self,
+    pull_request_title: &str,
+    source_branch_name: &str,
+    into_branch_name: &str,
+    merge_method: github_pull_request::GithubMergeMethod,
+  ) -> ResultDynError<()> {
+    let input = github_pull_request::CreatePullRequestInput {
+      title: pull_request_title,
+      repo_path: &self.config.github_path,
+      branch_name: source_branch_name,
+      into_branch: into_branch_name,
+    };
+
+    println!("[{}] Creating PR {:?}...", self.config.key, input);
+    let res_body: Value = self.ghub.pull_request.create(input).await?;
+    println!("[{}] Done creating PR", self.config.key);
+    log::debug!("Response body {:?}", res_body);
+
+    let pull_number: &str = &format!("{}", res_body["number"]);
+
+    // Merge
+    // -----------------------
+    let input = github_pull_request::MergePullRequestInput {
+      repo_path: &self.config.github_path,
+      pull_number,
+      merge_method,
+    };
+    println!("[{}] Merging PR {:?}...", self.config.key, input);
+    let res_body: Value = self.ghub.pull_request.merge(input).await?;
+    println!("[{}] Done merging PR", self.config.key);
+    log::debug!("Response body {:?}", res_body);
+
+    let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(failure::err_msg(
+      "Failed to parse merge pull request 'merged' to bool",
+    ))?;
+
+    if !merge_succeeded {
+      return Err(failure::format_err!(
+        "Failed to merge pull request response: {:?}",
+        res_body
+      ));
+    }
+
+    return Ok(());
+  }
+
+  /// As of now this only do merging.
+  /// Will do deployment in the future~
+  pub async fn deploy(
+    &self,
+    scheme_key: &str,
+    merge_method: GithubMergeMethod,
+  ) -> ResultDynError<()> {
+    let scheme = self
+      .config
+      .deployment_scheme_by_key
+      .get(scheme_key)
+      .ok_or_else(|| {
+        return failure::err_msg(format!("Invalid scheme key {}", scheme_key));
+      })?;
+
+    return self
+      .merge_remote_branch(
+        &scheme.default_pull_request_title,
+        &scheme.merge_from_branch,
+        &scheme.merge_into_branch,
+        merge_method,
+      )
+      .await;
+  }
+
   pub async fn merge_all_tasks(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllTasksOutput> {
-    // TODO: This doesnt work
-    // println!("[Run] cd {}", repo_config.path);
-    // exec(
-    // &format!("cd /home/cermati/development/athena/midas"),
-    // "Cannot git pull origin master",
-    // )?;
+    // TODO: Use structured logging[
 
     println!("[Run] git pull origin master");
     self
@@ -227,45 +311,14 @@ impl RepositoryDeploymentClient {
       remote_branch
     ))?;
 
-    let input = github_pull_request::CreatePullRequestInput {
-      title: &self.get_pull_request_title(remote_branch)?,
-      repo_path: &self.config.github_path,
-      branch_name,
-      into_branch: "master",
-    };
-
-    println!("[{}] Creating PR {:?}...", remote_branch, input);
-    let res_body: Value = self.ghub.pull_request.create(input).await?;
-    println!("[{}] Done creating PR", remote_branch);
-    log::debug!("Response body {:?}", res_body);
-
-    let pull_number: &str = &format!("{}", res_body["number"]);
-
-    // Merge
-    // -----------------------
-    let merge_method = github_pull_request::GithubMergeMethod::Squash;
-    let input = github_pull_request::MergePullRequestInput {
-      repo_path: &self.config.github_path,
-      pull_number,
-      merge_method,
-    };
-    println!("[{}] Merging PR {:?}...", remote_branch, input);
-    let res_body: Value = self.ghub.pull_request.merge(input).await?;
-    println!("[{}] Done merging PR", remote_branch);
-    log::debug!("Response body {:?}", res_body);
-
-    let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(failure::err_msg(
-      "Failed to parse merge pull request 'merged' to bool",
-    ))?;
-
-    if !merge_succeeded {
-      return Err(failure::format_err!(
-        "Failed to merge pull request {}",
-        remote_branch
-      ));
-    }
-
-    return Ok(());
+    return self
+      .merge_remote_branch(
+        &self.get_pull_request_title(remote_branch)?,
+        branch_name,
+        "master",
+        github_pull_request::GithubMergeMethod::Squash,
+      )
+      .await;
   }
 
   async fn tasks_in_master_branch(

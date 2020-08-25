@@ -12,20 +12,46 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
   # As of now, you just need to set phab config,
   # please see https://github.com/sendyhalim/phab for more details
   phab: {
-    api_token: ...,
-    pkcs12_path: ...,
-    host: yourphabricatorhost.com,
-    pkcs12_password: ...,
+    api_token: ...
+    pkcs12_path: ...
+    host: https://yourphabricatorhost.com
+    pkcs12_password: ...
   },
   ghub: {
     # This is your github personal token,
-    # you need to register token with full repository write access.
+    # you need to register token with a full repository write access.
     api_token: abc123
   },
+
+  # Deployment command config
   deployment: {
     repositories: [
-      {path: "/path/to/your/team/repo-a", github_path: "organization-name/foo"}
-      {path: "/path/to/your/team/repo-b", github_path: "organizationA-name/bar"}
+      {
+        key: "repo-name"
+        path: "repo-local-path"
+        github_path: "username/reponame"
+
+
+        # This config will be used when you're running
+        # deploy command, example:
+        # ```
+        # lezeh deployment deploy repo-name <stg|prod>
+        # ```
+        deployment_scheme_by_key: {
+          stg: {
+            name: "Deploy to stg"
+            default_pull_request_title: "Merge into stg"
+            merge_from_branch: "master"
+            merge_into_branch: "stg"
+          }
+          prod: {
+            name: "Deploy to prod"
+            default_pull_request_title: "Merge into prod"
+            merge_from_branch: "stg"
+            merge_into_branch: "prod"
+          }
+        }
+      }
     ]
   }
 }

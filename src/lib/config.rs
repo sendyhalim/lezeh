@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+use std::path::Path;
+
 use config::Config as BaseConfig;
 use config::File;
 use config::FileFormat;
 use serde::Deserialize;
-use std::path::Path;
 
 use crate::types::ResultDynError;
 
@@ -20,9 +22,19 @@ pub struct GhubConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct DeploymentSchemeConfig {
+  pub name: String,
+  pub default_pull_request_title: String,
+  pub merge_from_branch: String,
+  pub merge_into_branch: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct RepositoryConfig {
+  pub key: String,
   pub path: String,
   pub github_path: String, // For example: sendyhalim/foo
+  pub deployment_scheme_by_key: HashMap<String, DeploymentSchemeConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

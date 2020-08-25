@@ -5,12 +5,11 @@ use clap::SubCommand;
 
 use lib::client::GlobalDeploymentClient;
 use lib::config::Config;
+use lib::types::ResultDynError;
 
 pub mod built_info {
   include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-
-type ResultDynError<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main]
 async fn main() -> ResultDynError<()> {
@@ -45,6 +44,18 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
     .setting(clap::AppSettings::ArgRequiredElseHelp)
     .about("deployment cli")
     .subcommand(
+      SubCommand::with_name("deploy")
+      .about("Merge repo (given repo key) based on given deployment scheme config")
+      .arg(Arg::with_name("repo_key")
+        .required(true)
+        .help("Repo key")
+      )
+      .arg(Arg::with_name("scheme_key")
+        .required(true)
+        .help("Deployment scheme key")
+      )
+    )
+    .subcommand(
       SubCommand::with_name("merge-feature-branches")
         .about("Rebase and merge all feature branches for all repos in the config based on the given task ids")
         .arg(task_id_args),
@@ -54,8 +65,14 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
 async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
   let deployment_client = GlobalDeploymentClient::new(config)?;
 
-  if let Some(deployment_cli) = cli.subcommand_matches("merge-feature-branches") {
-    let task_ids = deployment_cli
+  if let Some(merge_cli) = cli.subcommand_matches("deploy") {
+    let repo_key: &str = merge_cli.value_of("repo_key").unwrap();
+    let scheme_key: &str = merge_cli.value_of("scheme_key").unwrap();
+
+    return deployment_client.deploy(repo_key, scheme_key).await;
+  } else if let Some(merge_feature_branches_cli) = cli.subcommand_matches("merge-feature-branches")
+  {
+    let task_ids = merge_feature_branches_cli
       .values_of("task_ids")
       .unwrap()
       .map(Into::into)
