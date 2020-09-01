@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use ghub::v3::branch::DeleteBranchInput;
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
 use ghub::v3::pull_request::GithubMergeMethod;
@@ -311,14 +312,27 @@ impl RepositoryDeploymentClient {
       remote_branch
     ))?;
 
-    return self
+    self
       .merge_remote_branch(
         &self.get_pull_request_title(remote_branch)?,
         branch_name,
         "master",
         github_pull_request::GithubMergeMethod::Squash,
       )
-      .await;
+      .await?;
+
+    // Cleanup branch after squash merge to prevent
+    // multiple merges
+    self
+      .ghub
+      .branch
+      .delete(DeleteBranchInput {
+        repo_path: &self.config.github_path,
+        branch_name,
+      })
+      .await?;
+
+    return Ok(());
   }
 
   async fn tasks_in_master_branch(
