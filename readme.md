@@ -27,7 +27,9 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
   deployment: {
     repositories: [
       {
-        key: "repo-name"
+        # This is a unique key that will be used as hashmap key
+        # for the repo.
+        key: "repo-key"
         path: "repo-local-path"
         github_path: "username/reponame"
 
@@ -61,14 +63,23 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
 # Usage
 ###
 ```bash
-# This merge-all command will
-# 1. Make sure your local master and remote branch is updated
-# 2. For all remote branches that contains the given branch names:
+# Below command will
+# 1. Make sure your local git data is updated by pulling remote git data from GH.
+# 2. For each remote branches that contains the given task numbers:
 #    - Print out phabricator task owner (assigned) for that specific branch.
-#    - Create local branch.
-#    - Rebase onto master.
-#    - Merge the local branch to master.
+#    - Create a PR for the matched branch.
+#    - Merge the branch into master with SQUASH strategy
+#    - Delete the remote branch
 #
 # Note: you do not need to give full branch name, it will match by substring.
-lezeh deployment merge-all <branch> <branch>
+lezeh deployment merge-feature-branches <task_number> <task_number> <...>
+
+
+# Merge repo (given repo key) based on given deployment scheme config.
+# Please see config (in the config example) explanation
+# for key deployment.repositories.deployment_scheme_by_key
+#
+# Example usage (based on above config example):
+# lezeh deployment deploy repo-key stg
+lezeh deployment deploy <repo_key> <scheme_key>
 ```
