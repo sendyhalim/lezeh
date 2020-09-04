@@ -3,7 +3,9 @@ name = "lezeh"
 version = "0.3.1"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
-description = "Commands for lazy people like me"
+description = """
+Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
+"""
 readme = "readme.md"
 homepage = "https://github.com/sendyhalim/lezeh"
 repository = "https://github.com/sendyhalim/lezeh"
