@@ -1,8 +1,17 @@
 # Install
+### Download binaries
+Go to latest releases and download the binaries [here](https://github.com/sendyhalim/lezeh/releases/latest)
+
+| Binary                               | OS    |
+| ------------------------------------ | ----- |
+| `lezeh-x86_64-unknown-linux-gnu.zip` | Linux |
+| `lezeh-x86_64-apple-darwin.zip`      | macOS |
+
 ### Building manually
 ```bash
 make install
 ```
+
 
 # Setup
 First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github.io/) format.
