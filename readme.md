@@ -1,4 +1,14 @@
-# Install
+# Lezeh
+`lezeh` is a CLI tool to ease day-to-day engineering operations such as:
+* Merging feature branch (by convention, specific using phabricator task number) into master,
+  this includes cleaning up (delete) the merged feature branch
+* Merge and run deployment commands
+
+[![Crates.io](https://img.shields.io/crates/v/lezeh)](https://crates.io/crates/lezeh)
+[![Crates.io](https://img.shields.io/crates/l/lezeh)](./license)
+
+
+## Install
 ### Download binaries
 Go to latest releases and download the binaries [here](https://github.com/sendyhalim/lezeh/releases/latest)
 
@@ -13,7 +23,7 @@ make install
 ```
 
 
-# Setup
+## Setup
 First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github.io/) format.
 
 ```bash
@@ -41,13 +51,6 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
         key: "repo-key"
         path: "repo-local-path"
         github_path: "username/reponame"
-
-
-        # This config will be used when you're running
-        # deploy command, example:
-        # ```
-        # lezeh deployment deploy repo-name <stg|prod>
-        # ```
         deployment_scheme_by_key: {
           stg: {
             name: "Deploy to stg"
@@ -69,24 +72,22 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
 ```
 
 
-# Usage
-###
+## Usage
+### Deployment Command
+
 ```bash
-# Below command will
-# 1. Make sure your local git data is updated by pulling remote git data from GH.
-# 2. For each remote branches that contains the given task numbers:
+# Below command will iterate all repositories under deployment.repositories config
+# and do the following operations:
+# * Make sure your local git data is updated by pulling remote git data from GH.
+# * For each remote branches that contains the given task numbers:
 #    - Print out phabricator task owner (assigned) for that specific branch.
 #    - Create a PR for the matched branch.
 #    - Merge the branch into master with SQUASH strategy
 #    - Delete the remote branch
-#
-# Note: you do not need to give full branch name, it will match by substring.
 lezeh deployment merge-feature-branches <task_number> <task_number> <...>
 
 
 # Merge repo (given repo key) based on given deployment scheme config.
-# Please see config (in the config example) explanation
-# for key deployment.repositories.deployment_scheme_by_key
 #
 # Example usage (based on above config example):
 # lezeh deployment deploy repo-key stg
