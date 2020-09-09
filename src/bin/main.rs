@@ -7,6 +7,8 @@ use lib::client::GlobalDeploymentClient;
 use lib::config::Config;
 use lib::types::ResultDynError;
 
+use slog::*;
+
 pub mod built_info {
   include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
@@ -14,6 +16,17 @@ pub mod built_info {
 #[tokio::main]
 async fn main() -> ResultDynError<()> {
   env_logger::init();
+
+  let log_decorator = slog_term::TermDecorator::new().build();
+  let log_drain = slog_term::CompactFormat::new(log_decorator).build().fuse();
+  let rust_log_val = std::env::var("RUST_LOG").unwrap_or("info".to_owned());
+  let log_drain = slog_envlogger::LogBuilder::new(log_drain)
+    .parse(&rust_log_val)
+    .build();
+
+  let log_drain = slog_async::Async::new(log_drain).build().fuse();
+
+  let logger = slog::Logger::root(log_drain, o!());
 
   // Default config
   let home_dir = std::env::var("HOME").unwrap();
@@ -28,7 +41,7 @@ async fn main() -> ResultDynError<()> {
     .get_matches();
 
   if let Some(deployment_cli) = cli.subcommand_matches("deployment") {
-    handle_deployment_cli(deployment_cli, config).await?;
+    handle_deployment_cli(deployment_cli, config, logger).await?;
   }
 
   return Ok(());
@@ -62,8 +75,12 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
     );
 }
 
-async fn handle_deployment_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
-  let deployment_client = GlobalDeploymentClient::new(config)?;
+async fn handle_deployment_cli(
+  cli: &ArgMatches<'_>,
+  config: Config,
+  logger: Logger,
+) -> ResultDynError<()> {
+  let deployment_client = GlobalDeploymentClient::new(config, logger)?;
 
   if let Some(merge_cli) = cli.subcommand_matches("deploy") {
     let repo_key: &str = merge_cli.value_of("repo_key").unwrap();

@@ -12,6 +12,7 @@ use phab_lib::client::phabricator::PhabricatorClient;
 use phab_lib::dto::Task;
 use phab_lib::dto::User;
 use serde_json::Value;
+use slog::Logger;
 
 use crate::command;
 use crate::command::PresetCommand;
@@ -24,10 +25,11 @@ pub struct GlobalDeploymentClient {
   phabricator: Arc<PhabricatorClient>,
   ghub: Arc<GithubClient>,
   repository_deployment_client_by_key: HashMap<String, RepositoryDeploymentClient>,
+  logger: Logger,
 }
 
 impl GlobalDeploymentClient {
-  pub fn new(config: Config) -> ResultDynError<GlobalDeploymentClient> {
+  pub fn new(config: Config, logger: Logger) -> ResultDynError<GlobalDeploymentClient> {
     let cert_identity_config = CertIdentityConfig {
       pkcs12_path: config.phab.pkcs12_path.clone(),
       pkcs12_password: config.phab.pkcs12_password.clone(),
@@ -47,9 +49,14 @@ impl GlobalDeploymentClient {
       .clone()
       .into_iter()
       .map(|repo_config| {
+        let repo_key = repo_config.clone().key;
         return (
-          repo_config.clone().key,
-          RepositoryDeploymentClient::new(repo_config.clone(), ghub.clone()),
+          repo_key.clone(),
+          RepositoryDeploymentClient::new(
+            repo_config.clone(),
+            ghub.clone(),
+            logger.new(slog::o!("repo" => repo_key)),
+          ),
         );
       })
       .collect();
@@ -59,6 +66,7 @@ impl GlobalDeploymentClient {
       config,
       phabricator,
       repository_deployment_client_by_key,
+      logger,
     });
   }
 }
@@ -141,7 +149,8 @@ impl GlobalDeploymentClient {
     }
 
     // Make sure that all is well
-    let merge_results: Result<Vec<MergeAllTasksOutput>, _> = merge_results.into_iter().collect();
+    let merge_results: Result<Vec<MergeAllTasksOutput>, failure::Error> =
+      merge_results.into_iter().collect();
     let merge_results = merge_results?;
     let not_found_user_task_mappings =
       TaskUtil::find_not_found_tasks(&merge_results, &task_by_id, &task_assignee_by_phid);
@@ -157,14 +166,20 @@ impl GlobalDeploymentClient {
 struct RepositoryDeploymentClient {
   pub config: RepositoryConfig,
   ghub: Arc<GithubClient>,
+  logger: Logger,
   preset_command: PresetCommand,
 }
 
 impl RepositoryDeploymentClient {
-  fn new(config: RepositoryConfig, ghub: Arc<GithubClient>) -> RepositoryDeploymentClient {
+  fn new(
+    config: RepositoryConfig,
+    ghub: Arc<GithubClient>,
+    logger: Logger,
+  ) -> RepositoryDeploymentClient {
     return RepositoryDeploymentClient {
       config: config.clone(),
       ghub,
+      logger,
       preset_command: PresetCommand {
         working_dir: config.path.clone(),
       },
@@ -187,10 +202,10 @@ impl RepositoryDeploymentClient {
       into_branch: into_branch_name,
     };
 
-    println!("[{}] Creating PR {:?}...", self.config.key, input);
+    slog::info!(self.logger, "Creating PR {:?}", input);
     let res_body: Value = self.ghub.pull_request.create(input).await?;
-    println!("[{}] Done creating PR", self.config.key);
-    log::debug!("Response body {:?}", res_body);
+    slog::info!(self.logger, "Done creating PR");
+    slog::debug!(self.logger, "Response body {:?}", res_body);
 
     let pull_number: &str = &format!("{}", res_body["number"]);
 
@@ -201,10 +216,11 @@ impl RepositoryDeploymentClient {
       pull_number,
       merge_method,
     };
-    println!("[{}] Merging PR {:?}...", self.config.key, input);
+
+    slog::info!(self.logger, "Merging PR {:?}", input);
     let res_body: Value = self.ghub.pull_request.merge(input).await?;
-    println!("[{}] Done merging PR", self.config.key);
-    log::debug!("Response body {:?}", res_body);
+    slog::info!(self.logger, "Done merging PR");
+    slog::debug!(self.logger, "Response body {:?}", res_body);
 
     let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(failure::err_msg(
       "Failed to parse merge pull request 'merged' to bool",
