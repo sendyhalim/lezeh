@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use failure::Fail;
+use futures::FutureExt;
 use ghub::v3::branch::DeleteBranchInput;
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
@@ -18,6 +20,7 @@ use crate::command;
 use crate::command::PresetCommand;
 use crate::config::Config;
 use crate::config::RepositoryConfig;
+use crate::io_logger;
 use crate::types::ResultDynError;
 
 pub struct GlobalDeploymentClient {
@@ -71,11 +74,34 @@ impl GlobalDeploymentClient {
   }
 }
 
+#[derive(Debug, Clone, Fail)]
+pub enum ClientOperationError {
+  #[fail(display = "Merge failed, please see {}", pull_request_url)]
+  MergeError {
+    remote_branch: String,
+    pull_request_url: String,
+  },
+}
+
+#[derive(Debug)]
+pub struct SuccesfulMergeOutput {
+  pub remote_branch: String,
+  pub pull_request_url: String,
+}
+
+#[derive(Debug)]
+pub struct FailedMergeOutput {
+  pub remote_branch: String,
+  pub pull_request_url: String,
+}
+
 #[derive(Debug)]
 pub struct MergeAllTasksOutput {
   pub repo_path: String,
   pub tasks_in_master_branch: Vec<TaskInMasterBranch>,
   pub matched_task_branch_mappings: Vec<MatchedTaskBranchMapping>,
+  pub successful_merge_task_operations: Vec<SuccesfulMergeOutput>,
+  pub failed_merge_task_operations: Vec<FailedMergeOutput>,
 }
 
 #[derive(Debug)]
@@ -149,7 +175,7 @@ impl GlobalDeploymentClient {
     }
 
     // Make sure that all is well
-    let merge_results: Result<Vec<MergeAllTasksOutput>, failure::Error> =
+    let merge_results: ResultDynError<Vec<MergeAllTasksOutput>> =
       merge_results.into_iter().collect();
     let merge_results = merge_results?;
     let not_found_user_task_mappings =
@@ -166,7 +192,7 @@ impl GlobalDeploymentClient {
 struct RepositoryDeploymentClient {
   pub config: RepositoryConfig,
   ghub: Arc<GithubClient>,
-  logger: Logger,
+  logger: Arc<Logger>,
   preset_command: PresetCommand,
 }
 
@@ -179,7 +205,7 @@ impl RepositoryDeploymentClient {
     return RepositoryDeploymentClient {
       config: config.clone(),
       ghub,
-      logger,
+      logger: Arc::new(logger),
       preset_command: PresetCommand {
         working_dir: config.path.clone(),
       },
@@ -194,20 +220,37 @@ impl RepositoryDeploymentClient {
     source_branch_name: &str,
     into_branch_name: &str,
     merge_method: github_pull_request::GithubMergeMethod,
-  ) -> ResultDynError<()> {
+  ) -> ResultDynError<SuccesfulMergeOutput> {
+    let repo_path = &self.config.github_path;
+
     let input = github_pull_request::CreatePullRequestInput {
       title: pull_request_title,
-      repo_path: &self.config.github_path,
+      repo_path,
       branch_name: source_branch_name,
       into_branch: into_branch_name,
     };
 
     slog::info!(self.logger, "Creating PR {:?}", input);
-    let res_body: Value = self.ghub.pull_request.create(input).await?;
+    let res_body: ResultDynError<Value> = self.ghub.pull_request.create(input).await;
     slog::info!(self.logger, "Done creating PR");
     slog::debug!(self.logger, "Response body {:?}", res_body);
 
+    let res_body: Value = res_body?;
+
+    let mergeable_str = format!("{}", res_body["mergeable"]);
+
     let pull_number: &str = &format!("{}", res_body["number"]);
+    let pull_request_url = format!("https://github.com/{}/pull/{}", repo_path, pull_number);
+
+    if mergeable_str != "true" {
+      return Err(
+        ClientOperationError::MergeError {
+          remote_branch: source_branch_name.into(),
+          pull_request_url,
+        }
+        .into(),
+      );
+    }
 
     // Merge
     // -----------------------
@@ -227,13 +270,19 @@ impl RepositoryDeploymentClient {
     ))?;
 
     if !merge_succeeded {
-      return Err(failure::format_err!(
-        "Failed to merge pull request response: {:?}",
-        res_body
-      ));
+      return Err(
+        ClientOperationError::MergeError {
+          remote_branch: source_branch_name.into(),
+          pull_request_url,
+        }
+        .into(),
+      );
     }
 
-    return Ok(());
+    return Ok(SuccesfulMergeOutput {
+      remote_branch: source_branch_name.into(),
+      pull_request_url,
+    });
   }
 
   /// As of now this only do merging.
@@ -251,7 +300,7 @@ impl RepositoryDeploymentClient {
         return failure::err_msg(format!("Invalid scheme key {}", scheme_key));
       })?;
 
-    return self
+    let _ = self
       .merge_remote_branch(
         &scheme.default_pull_request_title,
         &scheme.merge_from_branch,
@@ -259,56 +308,118 @@ impl RepositoryDeploymentClient {
         merge_method,
       )
       .await;
+
+    return Ok(());
   }
 
   pub async fn merge_all_tasks(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllTasksOutput> {
-    // TODO: Use structured logging[
+    slog::info!(self.logger, "[Run] git checkout master");
 
-    println!("[Run] git pull origin master");
-    self
-      .preset_command
-      .exec("git pull origin master", "Cannot git pull origin master")?;
+    slog::info!(
+      self.logger,
+      "{}",
+      self.preset_command.exec("git checkout master")?
+    );
+
+    slog::info!(self.logger, "[Run] git pull origin master");
+
+    slog::info!(
+      self.logger,
+      "{}",
+      self.preset_command.exec("git pull origin master")?
+    );
 
     // This will sync deleted branch remotely, sometimes we've deleted remote branch
     // but it still appears locally under origin/<branchname> when running `git branch -r`.
-    println!("[Run] git remote prune origin");
-    self
-      .preset_command
-      .exec("git remote prune origin", "Cannot git remote prune origin")?;
+    slog::info!(self.logger, "[Run] git remote prune origin");
+    slog::info!(
+      self.logger,
+      "{}",
+      self.preset_command.exec("git remote prune origin")?
+    );
 
-    println!("[Run] git fetch --all");
-    self
-      .preset_command
-      .exec("git fetch --all", "Cannot git fetch remote")?;
+    slog::info!(self.logger, "[Run] git fetch --all");
 
-    println!("[Run] git branch -r");
-    let remote_branches = self
-      .preset_command
-      .exec("git branch -r", "Cannot get all remote branches")?;
+    slog::info!(
+      self.logger,
+      "{}",
+      self.preset_command.exec("git fetch --all")?
+    );
+
+    slog::info!(self.logger, "[Run] git branch -r");
+
+    let remote_branches = self.preset_command.exec("git branch -r")?;
 
     let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
       TaskUtil::create_matching_task_and_branch(task_ids, &remote_branches.split('\n').collect());
     let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
 
-    for MatchedTaskBranchMapping(_task_id, remote_branch) in filtered_branch_mappings.iter() {
-      self.merge(&remote_branch).await?;
+    let all: Vec<futures::future::BoxFuture<Result<SuccesfulMergeOutput, _>>> =
+      filtered_branch_mappings
+        .iter()
+        .map(|MatchedTaskBranchMapping(_task_id, remote_branch)| {
+          async move {
+            return self.merge(&remote_branch).await;
+          }
+          .boxed()
+        })
+        .collect();
+
+    let results: Vec<ResultDynError<SuccesfulMergeOutput>> = futures::future::join_all(all).await;
+    let show_stopper_error: Option<&failure::Error> = results.iter().find_map(
+      |result: &Result<SuccesfulMergeOutput, failure::Error>| -> Option<&failure::Error> {
+        return result.as_ref().err().filter(|err| {
+          let maybe_merge_error: Option<&ClientOperationError> = err.downcast_ref();
+
+          return maybe_merge_error.is_none();
+        });
+      },
+    );
+
+    if show_stopper_error.is_some() {
+      // let show_stopper_error: failure::Error =
+      // failure::Error::from(show_stopper_error.unwrap().as_fail().into());
+
+      return Err(failure::err_msg(format!("{}", show_stopper_error.unwrap())));
     }
+
+    let (successes, failures): (
+      Vec<ResultDynError<SuccesfulMergeOutput>>,
+      Vec<ResultDynError<SuccesfulMergeOutput>>,
+    ) = results.into_iter().partition(|result| result.is_ok());
+
+    let failed_merge_task_operations: Vec<_> = failures
+      .into_iter()
+      .map(|possible_merge_error| {
+        let err = possible_merge_error.err().unwrap();
+        let ClientOperationError::MergeError {
+          remote_branch,
+          pull_request_url,
+        } = err.downcast_ref().unwrap();
+
+        return FailedMergeOutput {
+          remote_branch: String::from(remote_branch),
+          pull_request_url: String::from(pull_request_url),
+        };
+      })
+      .collect();
+
+    let successful_merge_task_operations = successes.into_iter().map(Result::unwrap).collect();
 
     return Ok(MergeAllTasksOutput {
       tasks_in_master_branch,
       matched_task_branch_mappings: filtered_branch_mappings,
       repo_path: self.config.path.clone(),
+      successful_merge_task_operations,
+      failed_merge_task_operations,
     });
   }
 
   fn get_pull_request_title(&self, remote_branch: &str) -> ResultDynError<String> {
-    let commit_messages = self.preset_command.exec(
-      &format!(
-        "git log --oneline --pretty=format:%s master..{}",
-        remote_branch
-      ),
-      "Cannot print out git log to get pull request title",
-    )?;
+    let commit_messages = self.preset_command.exec(&format!(
+      "git log --oneline --pretty=format:%s master..{}",
+      remote_branch
+    ))?;
 
     return commit_messages
       .split('\n')
@@ -320,7 +431,7 @@ impl RepositoryDeploymentClient {
       .map(|pr_title| pr_title.to_owned());
   }
 
-  async fn merge(&self, remote_branch: &str) -> ResultDynError<()> {
+  async fn merge(&self, remote_branch: &str) -> ResultDynError<SuccesfulMergeOutput> {
     // Create PR
     // -----------------------
     let branch_name = remote_branch.split('/').last().ok_or(failure::format_err!(
@@ -328,7 +439,7 @@ impl RepositoryDeploymentClient {
       remote_branch
     ))?;
 
-    self
+    let merge_output = self
       .merge_remote_branch(
         &self.get_pull_request_title(remote_branch)?,
         branch_name,
@@ -348,7 +459,7 @@ impl RepositoryDeploymentClient {
       })
       .await?;
 
-    return Ok(());
+    return Ok(merge_output);
   }
 
   async fn tasks_in_master_branch(
@@ -525,6 +636,11 @@ mod test {
           "3333".into(),
           "origin/bar_T3333_foo".into(),
         )],
+        successful_merge_task_operations: vec![SuccesfulMergeOutput {
+          remote_branch: "origin/bar_T3333_foo".into(),
+          pull_request_url: "https://example.com".into(),
+        }],
+        failed_merge_task_operations: vec![],
       }];
 
       let not_found_user_task_mappings =

@@ -106,12 +106,12 @@ async fn handle_deployment_cli(
       println!("T{}: {}", task.id, user.username);
     }
 
-    println!("");
-    println!("## Repo merge stats");
+    println!("\n## Repo merge stats");
     println!("================================");
     println!("================================");
+
     for repo_merge_output in output.merge_all_tasks_outputs.iter() {
-      println!("### Repo {}", repo_merge_output.repo_path);
+      println!("\n\n### Repo {}", repo_merge_output.repo_path);
       println!("--------------------------------");
 
       println!("#### Tasks in master branch");
@@ -122,11 +122,19 @@ async fn handle_deployment_cli(
         );
       }
 
-      println!("#### Matched tasks");
+      println!("\n#### Matched tasks");
       for lib::client::MatchedTaskBranchMapping(task_id, remote_branch) in
         repo_merge_output.matched_task_branch_mappings.iter()
       {
         println!("{}: {}", task_id, remote_branch);
+      }
+
+      println!("\n#### Tasks failed to merge");
+      for failed_merge_output in repo_merge_output.failed_merge_task_operations.iter() {
+        println!(
+          "{}: {}",
+          failed_merge_output.remote_branch, failed_merge_output.pull_request_url
+        );
       }
     }
   }

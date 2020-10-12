@@ -12,8 +12,8 @@ pub struct PresetCommand {
 }
 
 impl PresetCommand {
-  pub fn exec(&self, command_str: &str, _assertion_txt: &str) -> ResultDynError<String> {
-    let command_result = self
+  pub fn exec(&self, command_str: &str) -> ResultDynError<String> {
+    let mut command_result = self
       .spawn_command_from_str(command_str, None, None)?
       .wait_with_output()?;
 
@@ -40,7 +40,7 @@ impl PresetCommand {
     let handle = Command::new(command)
       .args(command_parts)
       .current_dir(&self.working_dir)
-      .stdin(stdin.unwrap_or(Stdio::null()))
+      .stdin(stdin.unwrap_or(Stdio::piped()))
       .stdout(stdout.unwrap_or(Stdio::piped()))
       .spawn()?;
 

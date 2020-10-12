@@ -559,9 +559,9 @@ dependencies = [
 
 [[package]]
 name = "ghub"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad28473b6993d91dcd54195ec408225a46f555c60d61159841f369ed8dec3573"
+checksum = "0ac5d306c7b576e6f7ab680abbe4a00b2f8f28455879e7110404ca069999bf5d"
 dependencies = [
  "config",
  "env_logger",
@@ -794,7 +794,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "built",
  "clap",
