@@ -13,7 +13,7 @@ pub struct PresetCommand {
 
 impl PresetCommand {
   pub fn exec(&self, command_str: &str) -> ResultDynError<String> {
-    let mut command_result = self
+    let command_result = self
       .spawn_command_from_str(command_str, None, None)?
       .wait_with_output()?;
 

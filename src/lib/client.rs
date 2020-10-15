@@ -20,7 +20,6 @@ use crate::command;
 use crate::command::PresetCommand;
 use crate::config::Config;
 use crate::config::RepositoryConfig;
-use crate::io_logger;
 use crate::types::ResultDynError;
 
 pub struct GlobalDeploymentClient {
@@ -223,26 +222,44 @@ impl RepositoryDeploymentClient {
   ) -> ResultDynError<SuccesfulMergeOutput> {
     let repo_path = &self.config.github_path;
 
-    let input = github_pull_request::CreatePullRequestInput {
-      title: pull_request_title,
-      repo_path,
-      branch_name: source_branch_name,
-      into_branch: into_branch_name,
-    };
+    let mut pull_request: Option<Value> = self
+      .ghub
+      .pull_request
+      .get_by_head(github_pull_request::GetPullRequestByHeadInput {
+        repo_path,
+        branch_name: source_branch_name,
+        branch_owner: repo_path
+          .split('/')
+          .nth(0)
+          .ok_or(format!("Could not read branch owner from {}", repo_path))
+          .map_err(failure::err_msg)?,
+      })
+      .await?;
 
-    slog::info!(self.logger, "Creating PR {:?}", input);
-    let res_body: ResultDynError<Value> = self.ghub.pull_request.create(input).await;
-    slog::info!(self.logger, "Done creating PR");
-    slog::debug!(self.logger, "Response body {:?}", res_body);
+    if pull_request.is_none() {
+      let input = github_pull_request::CreatePullRequestInput {
+        title: pull_request_title,
+        repo_path,
+        branch_name: source_branch_name,
+        into_branch: into_branch_name,
+      };
 
-    let res_body: Value = res_body?;
+      slog::info!(self.logger, "Creating PR {:?}", input);
+      let res_body: ResultDynError<Value> = self.ghub.pull_request.create(input).await;
+      slog::info!(self.logger, "Done creating PR");
+      slog::debug!(self.logger, "Response body {:?}", res_body);
 
-    let mergeable_str = format!("{}", res_body["mergeable"]);
+      pull_request = Some(res_body?);
+    }
 
-    let pull_number: &str = &format!("{}", res_body["number"]);
+    let pull_request = pull_request.unwrap();
+    let mergeable_str = format!("{}", pull_request["mergeable"]);
+    let pull_number = &format!("{}", pull_request["number"]);
     let pull_request_url = format!("https://github.com/{}/pull/{}", repo_path, pull_number);
 
-    if mergeable_str != "true" {
+    // TODO: We need to poll periodically for this
+    // https://developer.github.com/v3/git/#checking-mergeability-of-pull-requests
+    if mergeable_str == "false" {
       return Err(
         ClientOperationError::MergeError {
           remote_branch: source_branch_name.into(),
@@ -251,6 +268,7 @@ impl RepositoryDeploymentClient {
         .into(),
       );
     }
+    // }
 
     // Merge
     // -----------------------
