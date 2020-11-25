@@ -1,12 +1,17 @@
+use std::collections::HashMap;
+
 use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 
 use lib::client::GlobalDeploymentClient;
+use lib::client::MergeAllTasksOutput;
+use lib::client::UserTaskMapping;
 use lib::config::Config;
 use lib::types::ResultDynError;
 
+use phab_lib::dto::Task;
 use slog::*;
 
 pub mod built_info {
@@ -96,45 +101,91 @@ async fn handle_deployment_cli(
       .collect();
 
     let output = deployment_client.merge_feature_branches(&task_ids).await?;
+    let not_found_user_task_mappings_by_task_id: HashMap<String, &UserTaskMapping> = output
+      .not_found_user_task_mappings
+      .iter()
+      .map(|user_task_mapping| {
+        return (user_task_mapping.1.id.clone(), user_task_mapping);
+      })
+      .collect();
 
-    println!("# Merge stats");
-    println!("## Not found task ids");
-    println!("================================");
-    println!("================================");
+    let task_id_merge_infos: Vec<(String, String)> = output
+      .merge_all_tasks_outputs
+      .iter()
+      .flat_map(|merge_all_tasks_output: &MergeAllTasksOutput| {
+        let mut task_id_repo_master_branch_pairs: Vec<(String, String)> = merge_all_tasks_output
+          .tasks_in_master_branch
+          .iter()
+          .map(|tasks_in_master_branch| {
+            return (
+              tasks_in_master_branch.task_id.clone(),
+              format!("[already in master] {}", merge_all_tasks_output.repo_path),
+            );
+          })
+          .collect();
 
-    for lib::client::UserTaskMapping(user, task) in output.not_found_user_task_mappings.iter() {
-      println!("T{}: {}", task.id, user.username);
+        let mut task_id_successful_merge_task_pairs: Vec<(String, String)> = merge_all_tasks_output
+          .successful_merge_task_operations
+          .iter()
+          .map(|successful_merge_output| {
+            return (
+              successful_merge_output.task_id.clone(),
+              format!("[merged into master] {}", merge_all_tasks_output.repo_path),
+            );
+          })
+          .collect();
+
+        let mut task_id_failed_merge_task_pairs: Vec<(String, String)> = merge_all_tasks_output
+          .failed_merge_task_operations
+          .iter()
+          .map(|failed_merge_output| {
+            return (
+              failed_merge_output.task_id.clone(),
+              format!(
+                "[merging failed] {} {}",
+                merge_all_tasks_output.repo_path, failed_merge_output.pull_request_url
+              ),
+            );
+          })
+          .collect();
+
+        let mut task_pairs: Vec<(String, String)> = vec![];
+        task_pairs.append(&mut task_id_repo_master_branch_pairs);
+        task_pairs.append(&mut task_id_successful_merge_task_pairs);
+        task_pairs.append(&mut task_id_failed_merge_task_pairs);
+
+        return task_pairs;
+      })
+      .collect();
+
+    let mut merged_infos_by_task_id: HashMap<String, Vec<String>> = HashMap::new();
+
+    for (task_id, merge_info) in task_id_merge_infos.into_iter() {
+      merged_infos_by_task_id
+        .entry(task_id)
+        .or_insert(vec![])
+        .push(merge_info);
     }
 
-    println!("\n## Repo merge stats");
-    println!("================================");
-    println!("================================");
+    for task_id in task_ids.iter() {
+      let normalized_task_id = phab_lib::client::phabricator::PhabricatorClient::clean_id(task_id);
+      let merged_infos = merged_infos_by_task_id.get(normalized_task_id);
 
-    for repo_merge_output in output.merge_all_tasks_outputs.iter() {
-      println!("\n\n### Repo {}", repo_merge_output.repo_path);
-      println!("--------------------------------");
+      if merged_infos.is_some() {
+        println!("Task {}:", task_id);
+        println!("=======================================");
 
-      println!("#### Tasks in master branch");
-      for task_in_master_branch in repo_merge_output.tasks_in_master_branch.iter() {
-        println!(
-          "{}: {}",
-          task_in_master_branch.task_id, task_in_master_branch.commit_message
-        );
-      }
+        for merge_info in merged_infos.unwrap() {
+          println!("{}", merge_info);
+        }
 
-      println!("\n#### Matched tasks");
-      for lib::client::MatchedTaskBranchMapping(task_id, remote_branch) in
-        repo_merge_output.matched_task_branch_mappings.iter()
-      {
-        println!("{}: {}", task_id, remote_branch);
-      }
+        println!("\n\n");
+      } else {
+        let UserTaskMapping(user, _) = not_found_user_task_mappings_by_task_id
+          .get(normalized_task_id.clone())
+          .unwrap();
 
-      println!("\n#### Tasks failed to merge");
-      for failed_merge_output in repo_merge_output.failed_merge_task_operations.iter() {
-        println!(
-          "{}: {}",
-          failed_merge_output.remote_branch, failed_merge_output.pull_request_url
-        );
+        println!("Task {} - {}: NOT FOUND", task_id, user.username);
       }
     }
   }
