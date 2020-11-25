@@ -52,6 +52,7 @@ impl GlobalDeploymentClient {
       .into_iter()
       .map(|repo_config| {
         let repo_key = repo_config.clone().key;
+
         return (
           repo_key.clone(),
           RepositoryDeploymentClient::new(
@@ -89,7 +90,15 @@ pub struct SuccesfulMergeOutput {
 }
 
 #[derive(Debug)]
-pub struct FailedMergeOutput {
+pub struct SuccesfulMergeTaskOutput {
+  pub task_id: String,
+  pub remote_branch: String,
+  pub pull_request_url: String,
+}
+
+#[derive(Debug)]
+pub struct FailedMergeTaskOutput {
+  pub task_id: String,
   pub remote_branch: String,
   pub pull_request_url: String,
 }
@@ -99,8 +108,8 @@ pub struct MergeAllTasksOutput {
   pub repo_path: String,
   pub tasks_in_master_branch: Vec<TaskInMasterBranch>,
   pub matched_task_branch_mappings: Vec<MatchedTaskBranchMapping>,
-  pub successful_merge_task_operations: Vec<SuccesfulMergeOutput>,
-  pub failed_merge_task_operations: Vec<FailedMergeOutput>,
+  pub successful_merge_task_operations: Vec<SuccesfulMergeTaskOutput>,
+  pub failed_merge_task_operations: Vec<FailedMergeTaskOutput>,
 }
 
 #[derive(Debug)]
@@ -168,7 +177,7 @@ impl GlobalDeploymentClient {
     let mut merge_results: Vec<ResultDynError<MergeAllTasksOutput>> = vec![];
 
     for deployment_client in self.repository_deployment_client_by_key.values() {
-      let merge_result = deployment_client.merge_all_tasks(task_ids).await;
+      let merge_result = deployment_client.merge_all_tasks(&task_by_id).await;
 
       merge_results.push(merge_result);
     }
@@ -330,7 +339,10 @@ impl RepositoryDeploymentClient {
     return Ok(());
   }
 
-  pub async fn merge_all_tasks(&self, task_ids: &Vec<&str>) -> ResultDynError<MergeAllTasksOutput> {
+  pub async fn merge_all_tasks(
+    &self,
+    task_by_id: &HashMap<String, Task>,
+  ) -> ResultDynError<MergeAllTasksOutput> {
     slog::info!(self.logger, "[Run] git checkout master");
 
     slog::info!(
@@ -367,25 +379,41 @@ impl RepositoryDeploymentClient {
     slog::info!(self.logger, "[Run] git branch -r");
 
     let remote_branches = self.preset_command.exec("git branch -r")?;
+    let task_ids: Vec<&str> = task_by_id.keys().map(String::as_ref).collect();
 
     let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
-      TaskUtil::create_matching_task_and_branch(task_ids, &remote_branches.split('\n').collect());
+      TaskUtil::create_matching_task_and_branch(&task_ids, &remote_branches.split('\n').collect());
     let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
 
-    let all: Vec<futures::future::BoxFuture<Result<SuccesfulMergeOutput, _>>> =
+    let all: Vec<futures::future::BoxFuture<(String, ResultDynError<SuccesfulMergeOutput>)>> =
       filtered_branch_mappings
         .iter()
-        .map(|MatchedTaskBranchMapping(_task_id, remote_branch)| {
+        .map(|MatchedTaskBranchMapping(task_id, remote_branch)| {
           async move {
-            return self.merge(&remote_branch).await;
+            return (
+              task_id.clone(),
+              self
+                .merge(
+                  task_by_id.get(task_id).unwrap().name.as_ref(),
+                  &remote_branch,
+                )
+                .await,
+            );
           }
           .boxed()
         })
         .collect();
 
-    let results: Vec<ResultDynError<SuccesfulMergeOutput>> = futures::future::join_all(all).await;
+    let mut results: Vec<(String, ResultDynError<SuccesfulMergeOutput>)> = vec![];
+
+    // Merge in serially instead of concurrently to reduce possibility
+    // of race conditions.
+    for fut in all.into_iter() {
+      results.push(fut.await);
+    }
+
     let show_stopper_error: Option<&failure::Error> = results.iter().find_map(
-      |result: &Result<SuccesfulMergeOutput, failure::Error>| -> Option<&failure::Error> {
+      |(_task_id, result): &(String, Result<SuccesfulMergeOutput, failure::Error>)| -> Option<&failure::Error> {
         return result.as_ref().err().filter(|err| {
           let maybe_merge_error: Option<&ClientOperationError> = err.downcast_ref();
 
@@ -395,39 +423,50 @@ impl RepositoryDeploymentClient {
     );
 
     if show_stopper_error.is_some() {
-      // let show_stopper_error: failure::Error =
-      // failure::Error::from(show_stopper_error.unwrap().as_fail().into());
-
       return Err(failure::err_msg(format!("{}", show_stopper_error.unwrap())));
     }
 
     let (successes, failures): (
-      Vec<ResultDynError<SuccesfulMergeOutput>>,
-      Vec<ResultDynError<SuccesfulMergeOutput>>,
-    ) = results.into_iter().partition(|result| result.is_ok());
+      Vec<(String, ResultDynError<SuccesfulMergeOutput>)>,
+      Vec<(String, ResultDynError<SuccesfulMergeOutput>)>,
+    ) = results
+      .into_iter()
+      .partition(|(_task_id, result)| result.is_ok());
 
     let failed_merge_task_operations: Vec<_> = failures
       .into_iter()
-      .map(|possible_merge_error| {
+      .map(|(task_id, possible_merge_error)| {
         let err = possible_merge_error.err().unwrap();
         let ClientOperationError::MergeError {
           remote_branch,
           pull_request_url,
         } = err.downcast_ref().unwrap();
 
-        return FailedMergeOutput {
+        return FailedMergeTaskOutput {
+          task_id: task_id.clone(),
           remote_branch: String::from(remote_branch),
           pull_request_url: String::from(pull_request_url),
         };
       })
       .collect();
 
-    let successful_merge_task_operations = successes.into_iter().map(Result::unwrap).collect();
+    let successful_merge_task_operations = successes
+      .into_iter()
+      .map(|(task_id, successful_merge_branch_output)| {
+        let successful_merge_branch_output = successful_merge_branch_output.unwrap();
+
+        return SuccesfulMergeTaskOutput {
+          task_id: task_id.clone(),
+          remote_branch: successful_merge_branch_output.remote_branch,
+          pull_request_url: successful_merge_branch_output.pull_request_url,
+        };
+      })
+      .collect();
 
     return Ok(MergeAllTasksOutput {
       tasks_in_master_branch,
       matched_task_branch_mappings: filtered_branch_mappings,
-      repo_path: self.config.path.clone(),
+      repo_path: self.config.github_path.clone(),
       successful_merge_task_operations,
       failed_merge_task_operations,
     });
@@ -449,7 +488,11 @@ impl RepositoryDeploymentClient {
       .map(|pr_title| pr_title.to_owned());
   }
 
-  async fn merge(&self, remote_branch: &str) -> ResultDynError<SuccesfulMergeOutput> {
+  async fn merge(
+    &self,
+    pull_request_title: &str,
+    remote_branch: &str,
+  ) -> ResultDynError<SuccesfulMergeOutput> {
     // Create PR
     // -----------------------
     let branch_name = remote_branch.split('/').last().ok_or(failure::format_err!(
@@ -459,7 +502,7 @@ impl RepositoryDeploymentClient {
 
     let merge_output = self
       .merge_remote_branch(
-        &self.get_pull_request_title(remote_branch)?,
+        pull_request_title,
         branch_name,
         "master",
         github_pull_request::GithubMergeMethod::Squash,
@@ -590,7 +633,6 @@ impl TaskUtil {
     });
 
     let not_found_user_task_mappings: Vec<UserTaskMapping> = found_task_count_by_id
-      // .keys()
       .into_iter()
       .filter(|(_task_id, count)| {
         return *count == 0 as usize;
