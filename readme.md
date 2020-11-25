@@ -17,6 +17,11 @@ Go to latest releases and download the binaries [here](https://github.com/sendyh
 | `lezeh-x86_64-unknown-linux-gnu.zip` | Linux |
 | `lezeh-x86_64-apple-darwin.zip`      | macOS |
 
+### Using cargo
+```bash
+cargo install lezeh
+```
+
 ### Building manually
 This requires [rust](https://www.rust-lang.org/tools/install)
 ```bash
