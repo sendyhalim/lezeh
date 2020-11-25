@@ -11,7 +11,6 @@ use lib::client::UserTaskMapping;
 use lib::config::Config;
 use lib::types::ResultDynError;
 
-use phab_lib::dto::Task;
 use slog::*;
 
 pub mod built_info {
@@ -101,7 +100,7 @@ async fn handle_deployment_cli(
       .collect();
 
     let output = deployment_client.merge_feature_branches(&task_ids).await?;
-    let not_found_user_task_mappings_by_task_id: HashMap<String, &UserTaskMapping> = output
+    let not_found_user_task_mapping_by_task_id: HashMap<String, &UserTaskMapping> = output
       .not_found_user_task_mappings
       .iter()
       .map(|user_task_mapping| {
@@ -119,7 +118,10 @@ async fn handle_deployment_cli(
           .map(|tasks_in_master_branch| {
             return (
               tasks_in_master_branch.task_id.clone(),
-              format!("[already in master] {}", merge_all_tasks_output.repo_path),
+              format!(
+                "🙌 [already in master] {}",
+                merge_all_tasks_output.repo_path
+              ),
             );
           })
           .collect();
@@ -130,7 +132,10 @@ async fn handle_deployment_cli(
           .map(|successful_merge_output| {
             return (
               successful_merge_output.task_id.clone(),
-              format!("[merged into master] {}", merge_all_tasks_output.repo_path),
+              format!(
+                "👌 [merged into master] {}",
+                merge_all_tasks_output.repo_path
+              ),
             );
           })
           .collect();
@@ -142,7 +147,7 @@ async fn handle_deployment_cli(
             return (
               failed_merge_output.task_id.clone(),
               format!(
-                "[merging failed] {} {}",
+                "👎 [merging failed] {} {}",
                 merge_all_tasks_output.repo_path, failed_merge_output.pull_request_url
               ),
             );
@@ -167,26 +172,27 @@ async fn handle_deployment_cli(
         .push(merge_info);
     }
 
-    for task_id in task_ids.iter() {
-      let normalized_task_id = phab_lib::client::phabricator::PhabricatorClient::clean_id(task_id);
-      let merged_infos = merged_infos_by_task_id.get(normalized_task_id);
+    for (task_id, merged_infos) in merged_infos_by_task_id.iter() {
+      println!("📑 Task {}:", task_id);
+      println!("=======================================");
 
-      if merged_infos.is_some() {
-        println!("Task {}:", task_id);
-        println!("=======================================");
-
-        for merge_info in merged_infos.unwrap() {
-          println!("{}", merge_info);
-        }
-
-        println!("\n\n");
-      } else {
-        let UserTaskMapping(user, _) = not_found_user_task_mappings_by_task_id
-          .get(normalized_task_id.clone())
-          .unwrap();
-
-        println!("Task {} - {}: NOT FOUND", task_id, user.username);
+      for merge_info in merged_infos.iter() {
+        println!("{}", merge_info);
       }
+
+      println!("\n");
+    }
+
+    println!("🛠  Not found tasks");
+    println!("=======================================");
+    let not_found_user_task_mapping_by_task_id: HashMap<String, &UserTaskMapping> =
+      not_found_user_task_mapping_by_task_id
+        .into_iter()
+        .filter(|(task_id, _)| merged_infos_by_task_id.get(task_id).is_none())
+        .collect();
+
+    for (task_id, UserTaskMapping(user, _task)) in not_found_user_task_mapping_by_task_id.iter() {
+      println!("🔮 Task {} - {}", task_id, user.username);
     }
   }
 
