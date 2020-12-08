@@ -394,7 +394,15 @@ impl RepositoryDeploymentClient {
               task_id.clone(),
               self
                 .merge(
-                  task_by_id.get(task_id).unwrap().name.as_ref(),
+                  &format!(
+                    "[{}] {}",
+                    remote_branch
+                      .split('/')
+                      .nth(1)
+                      .or(Some(task_id.as_ref()))
+                      .unwrap(),
+                    task_by_id.get(task_id).unwrap().name
+                  ),
                   &remote_branch,
                 )
                 .await,
