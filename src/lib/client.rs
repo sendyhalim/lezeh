@@ -221,7 +221,36 @@ impl RepositoryDeploymentClient {
   }
 }
 
+struct GetPullRequestInput<'a> {
+  pub repo_path: &'a str,
+  pub branch_name: &'a str,
+}
+
 impl RepositoryDeploymentClient {
+  async fn get_pull_request<'a>(
+    &self,
+    input: GetPullRequestInput<'a>,
+  ) -> ResultDynError<Option<Value>> {
+    let GetPullRequestInput {
+      repo_path,
+      branch_name,
+    } = input;
+
+    return self
+      .ghub
+      .pull_request
+      .get_by_head(github_pull_request::GetPullRequestByHeadInput {
+        repo_path,
+        branch_name,
+        branch_owner: repo_path
+          .split('/')
+          .nth(0)
+          .ok_or(format!("Could not read branch owner from {}", repo_path))
+          .map_err(failure::err_msg)?,
+      })
+      .await;
+  }
+
   pub async fn merge_remote_branch(
     &self,
     pull_request_title: &str,
@@ -232,16 +261,9 @@ impl RepositoryDeploymentClient {
     let repo_path = &self.config.github_path;
 
     let mut pull_request: Option<Value> = self
-      .ghub
-      .pull_request
-      .get_by_head(github_pull_request::GetPullRequestByHeadInput {
+      .get_pull_request(GetPullRequestInput {
         repo_path,
         branch_name: source_branch_name,
-        branch_owner: repo_path
-          .split('/')
-          .nth(0)
-          .ok_or(format!("Could not read branch owner from {}", repo_path))
-          .map_err(failure::err_msg)?,
       })
       .await?;
 
@@ -258,17 +280,28 @@ impl RepositoryDeploymentClient {
       slog::info!(self.logger, "Done creating PR");
       slog::debug!(self.logger, "Response body {:?}", res_body);
 
-      pull_request = Some(res_body?);
+      // We're refetching the PR to trigger a mergeability check on github
+      // https://developer.github.com/v3/git/#checking-mergeability-of-pull-requests
+      pull_request = self
+        .get_pull_request(GetPullRequestInput {
+          repo_path,
+          branch_name: source_branch_name,
+        })
+        .await?;
     }
 
     let pull_request = pull_request.unwrap();
-    let mergeable_str = format!("{}", pull_request["mergeable"]);
+    let mergeable: bool = pull_request["mergeable"].as_bool().ok_or_else(|| {
+      return failure::format_err!(
+        "Could not read mergeable field from pull request {:?}",
+        pull_request,
+      );
+    })?;
+
     let pull_number = &format!("{}", pull_request["number"]);
     let pull_request_url = format!("https://github.com/{}/pull/{}", repo_path, pull_number);
 
-    // TODO: We need to poll periodically for this
-    // https://developer.github.com/v3/git/#checking-mergeability-of-pull-requests
-    if mergeable_str == "false" {
+    if !mergeable {
       return Err(
         ClientOperationError::MergeError {
           remote_branch: source_branch_name.into(),
