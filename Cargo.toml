@@ -1,6 +1,6 @@
 [package]
 name = "lezeh"
-version = "0.4.5"
+version = "0.4.6"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
@@ -11,7 +11,8 @@ homepage = "https://github.com/sendyhalim/lezeh"
 repository = "https://github.com/sendyhalim/lezeh"
 keywords = ["cli", "developer-tools"]
 categories = ["command-line-utilities"]
-license-file = "license"
+license = "MIT"
+license-file = "./LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
