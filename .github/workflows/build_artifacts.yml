@@ -16,9 +16,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # We can't use macos-latest as of now because it will
+        # refer to macos-10.15 as of this writing. The macos-11.0 is
+        # still in preview, so we're specifically set the runner to
+        # macos-11.0 and only support latest mac to ease
+        # the development effort.
+        os: [macos-11.0, ubuntu-latest]
         include:
-          - os: macos-latest
+          - os: macos-11.0
             target: x86_64-apple-darwin
             release_bin_name: lezeh.macos
           - os: ubuntu-latest
