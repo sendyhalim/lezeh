@@ -575,7 +575,7 @@ impl RepositoryDeploymentClient {
     task_ids: &Vec<&str>,
   ) -> ResultDynError<Vec<TaskInMasterBranch>> {
     let git_log_handle = self.preset_command.spawn_command_from_str(
-      "git log --oneline",
+      "git log --oneline --pretty=format:%s",
       None,
       Some(Stdio::piped()),
     )?;
