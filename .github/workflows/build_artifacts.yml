@@ -34,7 +34,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: 1.46.0 # config-rs dependency linked-hash-map is broken on stable rust
           target: ${{ matrix.target }}
           override: true
 
