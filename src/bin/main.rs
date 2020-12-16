@@ -173,7 +173,9 @@ async fn handle_deployment_cli(
     }
 
     for (task_id, merged_infos) in merged_infos_by_task_id.iter() {
-      println!("📑 Task {}:", task_id);
+      // TODO: Create a DTO for view-level task, where we have auto-formatted
+      // task id with format 'T{canonicalTaskId}'
+      println!("📑 Task T{}:", task_id);
       println!("=======================================");
 
       for merge_info in merged_infos.iter() {
@@ -192,7 +194,7 @@ async fn handle_deployment_cli(
         .collect();
 
     for (task_id, UserTaskMapping(user, _task)) in not_found_user_task_mapping_by_task_id.iter() {
-      println!("🔮 Task {} - {}", task_id, user.username);
+      println!("🔮 Task T{} - {}", task_id, user.username);
     }
   }
 
