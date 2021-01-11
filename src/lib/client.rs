@@ -552,7 +552,7 @@ impl RepositoryDeploymentClient {
         pull_request_title,
         branch_name,
         "master",
-        github_pull_request::GithubMergeMethod::Squash,
+        github_pull_request::GithubMergeMethod::Merge,
       )
       .await?;
 
