@@ -276,7 +276,7 @@ impl RepositoryDeploymentClient {
       };
 
       slog::info!(self.logger, "Creating PR {:?}", input);
-      let res_body: ResultDynError<Value> = self.ghub.pull_request.create(input).await;
+      let res_body: Value = self.ghub.pull_request.create(input).await?;
       slog::info!(self.logger, "Done creating PR");
       slog::debug!(self.logger, "Response body {:?}", res_body);
 
