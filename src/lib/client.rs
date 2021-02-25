@@ -519,22 +519,6 @@ impl RepositoryDeploymentClient {
     });
   }
 
-  fn get_pull_request_title(&self, remote_branch: &str) -> ResultDynError<String> {
-    let commit_messages = self.preset_command.exec(&format!(
-      "git log --oneline --pretty=format:%s master..{}",
-      remote_branch
-    ))?;
-
-    return commit_messages
-      .split('\n')
-      .last()
-      .ok_or(failure::format_err!(
-        "Failed to get pull request title from remote branch {}",
-        remote_branch
-      ))
-      .map(|pr_title| pr_title.to_owned());
-  }
-
   async fn merge(
     &self,
     pull_request_title: &str,
