@@ -1,14 +1,13 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 
-use config::Config as BaseConfig;
-use config::File;
-use config::FileFormat;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::types::ResultDynError;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PhabConfig {
   pub host: String,
   pub api_token: String,
@@ -16,12 +15,12 @@ pub struct PhabConfig {
   pub pkcs12_password: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GhubConfig {
   pub api_token: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeploymentSchemeConfig {
   pub name: String,
   pub default_pull_request_title: String,
@@ -29,7 +28,7 @@ pub struct DeploymentSchemeConfig {
   pub merge_into_branch: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RepositoryConfig {
   pub key: String,
   pub path: String,
@@ -37,12 +36,12 @@ pub struct RepositoryConfig {
   pub deployment_scheme_by_key: HashMap<String, DeploymentSchemeConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeploymentConfig {
   pub repositories: Vec<RepositoryConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
   pub phab: PhabConfig,
   pub ghub: GhubConfig,
@@ -51,14 +50,9 @@ pub struct Config {
 
 impl Config {
   pub fn new(setting_path: impl AsRef<Path>) -> ResultDynError<Config> {
-    let mut c = BaseConfig::new();
+    let config_str = fs::read_to_string(setting_path)?;
+    let config: Config = serde_yaml::from_str(&config_str)?;
 
-    let file_config = File::new(setting_path.as_ref().to_str().unwrap(), FileFormat::Hjson);
-
-    c.merge(file_config)?;
-
-    return c.try_into().map_err(|err| {
-      return failure::err_msg(err.to_string());
-    });
+    return Ok(config);
   }
 }
