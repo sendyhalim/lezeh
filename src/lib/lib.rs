@@ -1,4 +1,4 @@
-pub mod client;
+pub mod clients;
 pub mod command;
 pub mod config;
 pub mod io_logger;

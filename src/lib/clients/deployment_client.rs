@@ -281,10 +281,7 @@ impl RepositoryDeploymentClient {
       slog::debug!(self.logger, "Response body {:?}", res_body);
 
       // Wait for 1 second to give github sometime to calculate mergeability
-      tokio::time::delay_until(
-        tokio::time::Instant::now() + tokio::time::Duration::from_millis(1000),
-      )
-      .await;
+      tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
       // We're refetching the PR to trigger a mergeability check on github
       // https://developer.github.com/v3/git/#checking-mergeability-of-pull-requests

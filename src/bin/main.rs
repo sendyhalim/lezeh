@@ -5,9 +5,10 @@ use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 
-use lib::client::GlobalDeploymentClient;
-use lib::client::MergeAllTasksOutput;
-use lib::client::UserTaskMapping;
+use lib::clients::deployment_client::GlobalDeploymentClient;
+use lib::clients::deployment_client::MergeAllTasksOutput;
+use lib::clients::deployment_client::UserTaskMapping;
+use lib::clients::url_client::LezehUrlClient;
 use lib::config::Config;
 use lib::types::ResultDynError;
 
@@ -42,10 +43,13 @@ async fn main() -> ResultDynError<()> {
     .setting(clap::AppSettings::ArgRequiredElseHelp)
     .about(built_info::PKG_DESCRIPTION)
     .subcommand(deployment_cmd())
+    .subcommand(url_cmd())
     .get_matches();
 
   if let Some(deployment_cli) = cli.subcommand_matches("deployment") {
     handle_deployment_cli(deployment_cli, config, logger).await?;
+  } else if let Some(url_cli) = cli.subcommand_matches("url") {
+    handle_url_cli(url_cli, config).await?;
   }
 
   return Ok(());
@@ -79,6 +83,17 @@ fn deployment_cmd<'a, 'b>() -> Cli<'a, 'b> {
     );
 }
 
+fn url_cmd<'a, 'b>() -> Cli<'a, 'b> {
+  return SubCommand::with_name("url")
+    .setting(clap::AppSettings::ArgRequiredElseHelp)
+    .about("url cli")
+    .subcommand(
+      SubCommand::with_name("shorten")
+        .about("Shorten the given url")
+        .arg(Arg::with_name("long_url").required(true).help("Long Url")),
+    );
+}
+
 async fn handle_deployment_cli(
   cli: &ArgMatches<'_>,
   config: Config,
@@ -86,9 +101,9 @@ async fn handle_deployment_cli(
 ) -> ResultDynError<()> {
   let deployment_client = GlobalDeploymentClient::new(config, logger)?;
 
-  if let Some(merge_cli) = cli.subcommand_matches("deploy") {
-    let repo_key: &str = merge_cli.value_of("repo_key").unwrap();
-    let scheme_key: &str = merge_cli.value_of("scheme_key").unwrap();
+  if let Some(deploy_cli) = cli.subcommand_matches("deploy") {
+    let repo_key: &str = deploy_cli.value_of("repo_key").unwrap();
+    let scheme_key: &str = deploy_cli.value_of("scheme_key").unwrap();
 
     return deployment_client.deploy(repo_key, scheme_key).await;
   } else if let Some(merge_feature_branches_cli) = cli.subcommand_matches("merge-feature-branches")
@@ -196,6 +211,24 @@ async fn handle_deployment_cli(
     for (task_id, UserTaskMapping(user, _task)) in not_found_user_task_mapping_by_task_id.iter() {
       println!("🔮 Task T{} - {}", task_id, user.username);
     }
+  }
+
+  return Ok(());
+}
+
+async fn handle_url_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
+  let bitly_config = config
+    .bitly
+    .ok_or(failure::err_msg("Could not get bitly config"))?;
+
+  let url_client = LezehUrlClient::new(bitly_config);
+
+  if let Some(shorten_cli) = cli.subcommand_matches("shorten") {
+    let long_url: &str = shorten_cli.value_of("long_url").unwrap();
+
+    let short_url = url_client.shorten(long_url).await?;
+
+    println!("{}", short_url);
   }
 
   return Ok(());

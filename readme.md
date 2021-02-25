@@ -30,51 +30,40 @@ make install
 
 
 ## Setup
-First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github.io/) format.
+First create config file at `~/.lezeh`, we're using YAML format.
 
-```bash
-{
-  # As of now, you just need to set phab config,
-  # please see https://github.com/sendyhalim/phab for more details
-  phab: {
-    api_token: ...
-    pkcs12_path: ...
-    host: https://yourphabricatorhost.com
-    pkcs12_password: ...
-  },
-  ghub: {
-    # This is your github personal token,
-    # you need to register token with a full repository write access.
-    api_token: abc123
-  },
+```yaml
+phab:
+  api_token: test125
+  pkcs12_path: /path/to/pkcs12
+  host: 'yourphabricatorhost.com'
+  pkcs12_password: abcdefg
 
-  # Deployment command config
-  deployment: {
-    repositories: [
-      {
-        # This is a unique key that will be used as hashmap key
-        # for the repo.
-        key: "repo-key"
-        path: "repo-local-path"
-        github_path: "username/reponame"
-        deployment_scheme_by_key: {
-          stg: {
-            name: "Deploy to stg"
-            default_pull_request_title: "Merge into stg"
-            merge_from_branch: "master"
-            merge_into_branch: "stg"
-          }
-          prod: {
-            name: "Deploy to prod"
-            default_pull_request_title: "Merge into prod"
-            merge_from_branch: "stg"
-            merge_into_branch: "prod"
-          }
-        }
-      }
-    ]
-  }
-}
+ghub:
+  api_token: test124
+
+bitly:
+  api_token: test123
+
+# Deployment command config
+deployment:
+  repositories:
+      # This is a unique key that will be used as hashmap key
+      # for the repo.
+    - key: "repo-key"
+      path: "repo-local-path"
+      github_path: "username/reponame"
+      deployment_scheme_by_key:
+        stg:
+          name: "Deploy to stg"
+          default_pull_request_title: "Merge into stg"
+          merge_from_branch: "master"
+          merge_into_branch: "stg"
+        prod:
+          name: "Deploy to prod"
+          default_pull_request_title: "Merge into prod"
+          merge_from_branch: "stg"
+          merge_into_branch: "prod"
 ```
 
 
@@ -90,12 +79,18 @@ First create config file at `~/.lezeh`, we're using [Hjson](https://hjson.github
 #    - Create a PR for the matched branch.
 #    - Merge the branch into master with SQUASH strategy
 #    - Delete the remote branch
-lezeh deployment merge-feature-branches <task_number> <task_number> <...>
+lezeh deployment merge-feature-branches {task_number} {task_number} {task_number} ...
 
 
 # Merge repo (given repo key) based on given deployment scheme config.
 #
 # Example usage (based on above config example):
 # lezeh deployment deploy repo-key stg
-lezeh deployment deploy <repo_key> <scheme_key>
+lezeh deployment deploy {repo_key} {scheme_key}
 ```
+
+### URL Command
+```
+lezeh url shorten {longUrl}
+```
+

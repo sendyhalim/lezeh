@@ -42,9 +42,15 @@ pub struct DeploymentConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BitlyConfig {
+  pub api_token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
   pub phab: PhabConfig,
   pub ghub: GhubConfig,
+  pub bitly: Option<BitlyConfig>,
   pub deployment: DeploymentConfig,
 }
 
