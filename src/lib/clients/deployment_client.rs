@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::{collections::HashMap, hash::Hash};
 
 use failure::Fail;
 use futures::FutureExt;
@@ -13,6 +13,7 @@ use phab_lib::client::config::PhabricatorClientConfig;
 use phab_lib::client::phabricator::PhabricatorClient;
 use phab_lib::dto::Task;
 use phab_lib::dto::User;
+use serde::Serialize;
 use serde_json::Value;
 use slog::Logger;
 
@@ -83,50 +84,53 @@ pub enum ClientOperationError {
   },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SuccesfulMergeOutput {
   pub remote_branch: String,
   pub pull_request_url: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SuccesfulMergeTaskOutput {
+  pub repo_config: RepositoryConfig,
   pub task_id: String,
   pub remote_branch: String,
   pub pull_request_url: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct FailedMergeTaskOutput {
+  pub repo_config: RepositoryConfig,
   pub task_id: String,
   pub remote_branch: String,
   pub pull_request_url: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct MergeAllTasksOutput {
   pub repo_path: String,
-  pub tasks_in_master_branch: Vec<TaskInMasterBranch>,
+  pub task_in_master_branch_by_task_id: HashMap<String, TaskInMasterBranch>,
   pub matched_task_branch_mappings: Vec<MatchedTaskBranchMapping>,
-  pub successful_merge_task_operations: Vec<SuccesfulMergeTaskOutput>,
-  pub failed_merge_task_operations: Vec<FailedMergeTaskOutput>,
+  pub successful_merge_task_output_by_task_id: HashMap<String, SuccesfulMergeTaskOutput>,
+  pub failed_merge_task_output_by_task_id: HashMap<String, FailedMergeTaskOutput>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct MergeFeatureBranchesOutput {
   pub merge_all_tasks_outputs: Vec<MergeAllTasksOutput>,
   pub task_by_id: HashMap<String, Task>,
   pub not_found_user_task_mappings: Vec<UserTaskMapping>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct UserTaskMapping(pub User, pub Task);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct MatchedTaskBranchMapping(pub String, pub String);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct TaskInMasterBranch {
+  pub repo_config: RepositoryConfig,
   pub commit_message: String,
   pub task_id: String,
 }
@@ -419,7 +423,7 @@ impl RepositoryDeploymentClient {
 
     let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
       TaskUtil::create_matching_task_and_branch(&task_ids, &remote_branches.split('\n').collect());
-    let tasks_in_master_branch = self.tasks_in_master_branch(&task_ids).await?;
+    let task_in_master_branch_by_task_id = self.task_in_master_branch_by_task_id(&task_ids).await?;
 
     let all: Vec<futures::future::BoxFuture<(String, ResultDynError<SuccesfulMergeOutput>)>> =
       filtered_branch_mappings
@@ -477,7 +481,7 @@ impl RepositoryDeploymentClient {
       .into_iter()
       .partition(|(_task_id, result)| result.is_ok());
 
-    let failed_merge_task_operations: Vec<_> = failures
+    let failed_merge_task_output_by_task_id: HashMap<_, _> = failures
       .into_iter()
       .map(|(task_id, possible_merge_error)| {
         let err = possible_merge_error.err().unwrap();
@@ -486,33 +490,41 @@ impl RepositoryDeploymentClient {
           pull_request_url,
         } = err.downcast_ref().unwrap();
 
-        return FailedMergeTaskOutput {
-          task_id: task_id.clone(),
-          remote_branch: String::from(remote_branch),
-          pull_request_url: String::from(pull_request_url),
-        };
+        return (
+          task_id.clone(),
+          FailedMergeTaskOutput {
+            repo_config: self.config.clone(),
+            task_id: task_id.clone(),
+            remote_branch: String::from(remote_branch),
+            pull_request_url: String::from(pull_request_url),
+          },
+        );
       })
       .collect();
 
-    let successful_merge_task_operations = successes
+    let successful_merge_task_output_by_task_id: HashMap<_, _> = successes
       .into_iter()
       .map(|(task_id, successful_merge_branch_output)| {
         let successful_merge_branch_output = successful_merge_branch_output.unwrap();
 
-        return SuccesfulMergeTaskOutput {
-          task_id: task_id.clone(),
-          remote_branch: successful_merge_branch_output.remote_branch,
-          pull_request_url: successful_merge_branch_output.pull_request_url,
-        };
+        return (
+          task_id.clone(),
+          SuccesfulMergeTaskOutput {
+            repo_config: self.config.clone(),
+            task_id: task_id.clone(),
+            remote_branch: successful_merge_branch_output.remote_branch,
+            pull_request_url: successful_merge_branch_output.pull_request_url,
+          },
+        );
       })
       .collect();
 
     return Ok(MergeAllTasksOutput {
-      tasks_in_master_branch,
+      task_in_master_branch_by_task_id,
       matched_task_branch_mappings: filtered_branch_mappings,
       repo_path: self.config.github_path.clone(),
-      successful_merge_task_operations,
-      failed_merge_task_operations,
+      successful_merge_task_output_by_task_id,
+      failed_merge_task_output_by_task_id,
     });
   }
 
@@ -551,10 +563,10 @@ impl RepositoryDeploymentClient {
     return Ok(merge_output);
   }
 
-  async fn tasks_in_master_branch(
+  async fn task_in_master_branch_by_task_id(
     &self,
     task_ids: &Vec<&str>,
-  ) -> ResultDynError<Vec<TaskInMasterBranch>> {
+  ) -> ResultDynError<HashMap<String, TaskInMasterBranch>> {
     let git_log_handle = self.preset_command.spawn_command_from_str(
       "git log --oneline --pretty=format:%s",
       None,
@@ -596,9 +608,15 @@ impl RepositoryDeploymentClient {
             })
             .collect();
         })
-        .map(|(task_id, commit_message)| TaskInMasterBranch {
-          task_id,
-          commit_message,
+        .map(|(task_id, commit_message)| {
+          return (
+            task_id.clone(),
+            TaskInMasterBranch {
+              repo_config: self.config.clone(),
+              task_id,
+              commit_message,
+            },
+          );
         })
         .collect(),
     );
@@ -717,18 +735,32 @@ mod test {
         })
         .collect();
 
+      let mut successful_merge_task_output_by_task_id: HashMap<String, SuccesfulMergeTaskOutput> =
+        HashMap::new();
+      successful_merge_task_output_by_task_id.insert(
+        "3333".to_owned(),
+        SuccesfulMergeTaskOutput {
+          repo_config: RepositoryConfig {
+            key: "",
+            path: "",
+            github_path: "",
+            deployment_scheme_by_key: HashMap::new(),
+          },
+          task_id: "3333".to_owned(),
+          remote_branch: "origin/bar_T3333_foo".into(),
+          pull_request_url: "https://example.com".into(),
+        },
+      );
+
       let merge_results: Vec<MergeAllTasksOutput> = vec![MergeAllTasksOutput {
         repo_path: String::from("/foo"),
-        tasks_in_master_branch: vec![],
+        task_in_master_branch_by_task_id: HashMap::new(),
         matched_task_branch_mappings: vec![MatchedTaskBranchMapping(
           "3333".into(),
           "origin/bar_T3333_foo".into(),
         )],
-        successful_merge_task_operations: vec![SuccesfulMergeOutput {
-          remote_branch: "origin/bar_T3333_foo".into(),
-          pull_request_url: "https://example.com".into(),
-        }],
-        failed_merge_task_operations: vec![],
+        successful_merge_task_output_by_task_id,
+        failed_merge_task_output_by_task_id: HashMap::new(),
       }];
 
       let not_found_user_task_mappings =

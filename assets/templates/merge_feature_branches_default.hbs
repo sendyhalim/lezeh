@@ -1,0 +1,20 @@
+{{#each this.merge_feature_branches_output.task_by_id}}
+T{{@key}}
+---------------------------
+  {{#each this.merge_feature_branches_output.merge_all_tasks_outputs}}
+    {{#each this.merge_feature_branches_output.merge_all_tasks_outputs}}
+      {{#each this.successful_merge_task_output_by_task_id}}
+
+      {{/each}}
+
+
+    {{/each}}
+  {{/each}}
+
+{{/each}}
+
+🛠  Not found tasks
+=======================================
+{{#each this.not_found_user_task_mapping_by_task_id}}
+🔮 Task T{{@key}} - {{this.0.username}}
+{{/each}}
