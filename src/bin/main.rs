@@ -4,10 +4,15 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
+use serde::Deserialize;
+use serde::Serialize;
 
 use lib::asset::Asset;
+use lib::clients::deployment_client::FailedMergeTaskOutput;
 use lib::clients::deployment_client::GlobalDeploymentClient;
 use lib::clients::deployment_client::MergeAllTasksOutput;
+use lib::clients::deployment_client::SuccesfulMergeTaskOutput;
+use lib::clients::deployment_client::TaskInMasterBranch;
 use lib::clients::deployment_client::UserTaskMapping;
 use lib::clients::url_client::LezehUrlClient;
 use lib::config::Config;
@@ -18,6 +23,23 @@ use slog::*;
 
 pub mod built_info {
   include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
+#[derive(Debug, Serialize)]
+struct TaskMergeSummary<'a> {
+  success_merge_results: Vec<&'a SuccesfulMergeTaskOutput>,
+  failed_merge_results: Vec<&'a FailedMergeTaskOutput>,
+  already_in_master_branch_related_commits: Vec<&'a TaskInMasterBranch>,
+}
+
+impl<'a> Default for TaskMergeSummary<'a> {
+  fn default() -> Self {
+    return TaskMergeSummary {
+      success_merge_results: Default::default(),
+      failed_merge_results: Default::default(),
+      already_in_master_branch_related_commits: Default::default(),
+    };
+  }
 }
 
 #[tokio::main]
@@ -197,13 +219,59 @@ async fn handle_deployment_cli(
 
     let mut template_data: HashMap<&str, Box<dyn erased_serde::Serialize>> = HashMap::new();
 
+    let mut merge_result_summary_by_task_id: HashMap<String, TaskMergeSummary> = Default::default();
+
+    for (task_id, _) in merge_feature_branches_output.task_by_id.iter() {
+      let task_summary = merge_result_summary_by_task_id
+        .entry(task_id.clone())
+        .or_default();
+
+      for merge_all_task_output in merge_feature_branches_output.merge_all_tasks_outputs.iter() {
+        let task_in_master_branch = merge_all_task_output
+          .task_in_master_branch_by_task_id
+          .get(task_id);
+
+        if task_in_master_branch.is_some() {
+          task_summary
+            .already_in_master_branch_related_commits
+            .push(task_in_master_branch.unwrap());
+        }
+
+        let successful_merge_task = merge_all_task_output
+          .successful_merge_task_output_by_task_id
+          .get(task_id);
+
+        if successful_merge_task.is_some() {
+          task_summary
+            .success_merge_results
+            .push(successful_merge_task.unwrap());
+        }
+
+        let failed_merge_task = merge_all_task_output
+          .failed_merge_task_output_by_task_id
+          .get(task_id);
+
+        if failed_merge_task.is_some() {
+          task_summary
+            .failed_merge_results
+            .push(failed_merge_task.unwrap());
+        }
+      }
+    }
+
+    template_data.insert(
+      "merge_result_summary_by_task_id",
+      Box::from(merge_result_summary_by_task_id),
+    );
+
     template_data.insert(
       "merge_feature_branches_output",
       Box::from(&merge_feature_branches_output),
     );
+
     template_data.insert(
       "not_found_user_task_mapping_by_task_id",
-      Box::from(&not_found_user_task_mapping_by_task_id),
+      Box::from(not_found_user_task_mapping_by_task_id),
     );
 
     let output: String = HandlebarsRenderer::new().render(
