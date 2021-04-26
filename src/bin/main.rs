@@ -4,13 +4,11 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
-use serde::Deserialize;
 use serde::Serialize;
 
 use lib::asset::Asset;
 use lib::clients::deployment_client::FailedMergeTaskOutput;
 use lib::clients::deployment_client::GlobalDeploymentClient;
-use lib::clients::deployment_client::MergeAllTasksOutput;
 use lib::clients::deployment_client::SuccesfulMergeTaskOutput;
 use lib::clients::deployment_client::TaskInMasterBranch;
 use lib::clients::deployment_client::UserTaskMapping;

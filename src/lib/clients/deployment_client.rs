@@ -676,6 +676,14 @@ impl TaskUtil {
 
         *current_counter += 1;
       }
+
+      for (task_id, _) in merge_result.task_in_master_branch_by_task_id.iter() {
+        let current_counter = found_task_count_by_id
+          .get_mut(PhabricatorClient::clean_id(task_id))
+          .unwrap();
+
+        *current_counter += 1;
+      }
     });
 
     let not_found_user_task_mappings: Vec<UserTaskMapping> = found_task_count_by_id
