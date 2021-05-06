@@ -284,8 +284,8 @@ impl RepositoryDeploymentClient {
       slog::info!(self.logger, "Done creating PR");
       slog::debug!(self.logger, "Response body {:?}", res_body);
 
-      // Wait for 1 second to give github sometime to calculate mergeability
-      tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+      // Wait for 2 seconds to give github sometime to calculate mergeability
+      tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
 
       // We're refetching the PR to trigger a mergeability check on github
       // https://developer.github.com/v3/git/#checking-mergeability-of-pull-requests
