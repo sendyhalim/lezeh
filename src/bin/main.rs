@@ -6,7 +6,6 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use serde::Serialize;
 
-use lib::asset::Asset;
 use lib::clients::deployment_client::FailedMergeTaskOutput;
 use lib::clients::deployment_client::GlobalDeploymentClient;
 use lib::clients::deployment_client::SuccesfulMergeTaskOutput;
@@ -121,7 +120,7 @@ async fn handle_deployment_cli(
   config: Config,
   logger: Logger,
 ) -> ResultDynError<()> {
-  let deployment_client = GlobalDeploymentClient::new(config, logger)?;
+  let deployment_client = GlobalDeploymentClient::new(config.clone(), logger)?;
 
   if let Some(deploy_cli) = cli.subcommand_matches("deploy") {
     let repo_key: &str = deploy_cli.value_of("repo_key").unwrap();
@@ -145,75 +144,6 @@ async fn handle_deployment_cli(
           return (user_task_mapping.1.id.clone(), user_task_mapping);
         })
         .collect();
-
-    // let task_id_merge_output_pairs: Vec<(String, Box<dyn erased_serde::Serialize>)> = output
-    // .merge_all_tasks_outputs
-    // .iter()
-    // .flat_map(|merge_all_tasks_output: &MergeAllTasksOutput| {
-    // let mut task_id_repo_master_branch_pairs: Vec<(String, Box<dyn erased_serde::Serialize>)> =
-    // merge_all_tasks_output
-    // .tasks_in_master_branch
-    // .iter()
-    // .map(|task_in_master_branch| {
-    // return (
-    // task_in_master_branch.task_id.clone(),
-    // Box::from(&task_in_master_branch),
-    // );
-    // })
-    // .collect();
-
-    // let mut task_id_successful_merge_task_output_pairs: Vec<(String, String)> =
-    // merge_all_tasks_output
-    // .successful_merge_task_operations
-    // .iter()
-    // .map(|successful_merge_output| {
-    // return (
-    // successful_merge_output.task_id.clone(),
-    // format!(
-    // "👌 [merged into master] {}",
-    // merge_all_tasks_output.repo_path
-    // ),
-    // );
-    // })
-    // .collect();
-
-    // let mut task_id_failed_merge_task_pairs: Vec<(String, String)> = merge_all_tasks_output
-    // .failed_merge_task_operations
-    // .iter()
-    // .map(|failed_merge_output| {
-    // return (
-    // failed_merge_output.task_id.clone(),
-    // format!(
-    // "👎 [merging failed] {} {}",
-    // merge_all_tasks_output.repo_path, failed_merge_output.pull_request_url
-    // ),
-    // );
-    // })
-    // .collect();
-
-    // let mut task_pairs: Vec<(String, String)> = vec![];
-    // task_pairs.append(&mut task_id_repo_master_branch_pairs);
-    // task_pairs.append(&mut task_id_successful_merge_task_pairs);
-    // task_pairs.append(&mut task_id_failed_merge_task_pairs);
-
-    // return task_pairs;
-    // })
-    // .collect();
-
-    // let mut merged_infos_by_task_id: HashMap<String, Vec<String>> = HashMap::new();
-
-    // for (task_id, merge_info) in task_id_merge_infos.into_iter() {
-    // merged_infos_by_task_id
-    // .entry(task_id)
-    // .or_insert(vec![])
-    // .push(merge_info);
-    // }
-
-    // let not_found_user_task_mapping_by_task_id: HashMap<String, &UserTaskMapping> =
-    // not_found_user_task_mapping_by_task_id
-    // .into_iter()
-    // .filter(|(task_id, _)| merged_infos_by_task_id.get(task_id).is_none())
-    // .collect();
 
     let mut template_data: HashMap<&str, Box<dyn erased_serde::Serialize>> = HashMap::new();
 
@@ -273,35 +203,16 @@ async fn handle_deployment_cli(
     );
 
     let output: String = HandlebarsRenderer::new().render(
-      std::str::from_utf8(
-        Asset::get("merge_feature_branches_default.hbs")
-          .unwrap()
-          .as_ref(),
-      )?,
+      &config
+        .deployment
+        .merge_feature_branches
+        .unwrap()
+        .output_template_path
+        .unwrap(),
       template_data,
     )?;
 
     println!("{}", output);
-
-    // for (task_id, merged_infos) in merged_infos_by_task_id.iter() {
-    // // TODO: Create a DTO for view-level task, where we have auto-formatted
-    // // task id with format 'T{canonicalTaskId}'
-    // println!("📑 Task T{}:", task_id);
-    // println!("=======================================");
-
-    // for merge_info in merged_infos.iter() {
-    // println!("{}", merge_info);
-    // }
-
-    // println!("\n");
-    // }
-
-    // println!("🛠  Not found tasks");
-    // println!("=======================================");
-
-    // for (task_id, UserTaskMapping(user, _task)) in not_found_user_task_mapping_by_task_id.iter() {
-    // println!("🔮 Task T{} - {}", task_id, user.username);
-    // }
   }
 
   return Ok(());
