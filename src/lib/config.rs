@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::{borrow::Cow, collections::HashMap};
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -56,14 +56,13 @@ pub struct MergeFeatureBranchesConfig {
 
 impl Default for MergeFeatureBranchesConfig {
   fn default() -> Self {
-    use std::borrow::Borrow;
+    let buf: Cow<[u8]> = Asset::get("merge_feature_branches_default.hbs").unwrap();
+    let buf: &[u8] = buf.as_ref();
 
-    let output_template_path: String = String::from(Asset::get("merge_feature_branches_default.hbs")
-      .unwrap()
-      .borrow());
+    let output_template_path: String = String::from_utf8(Vec::from(buf)).unwrap();
 
     return MergeFeatureBranchesConfig {
-      output_template_path: Some(output_template_path)
+      output_template_path: Some(output_template_path),
     };
   }
 }
@@ -88,7 +87,10 @@ impl Config {
     let config_str = fs::read_to_string(setting_path)?;
     let mut config: Config = serde_yaml::from_str(&config_str)?;
 
-    config.deployment.merge_feature_branches.is_none() ?
+    if config.deployment.merge_feature_branches.is_none() {
+      config.deployment.merge_feature_branches = Default::default();
+    }
+    println!("{:?}", config);
 
     return Ok(config);
   }
