@@ -1,26 +1,27 @@
-{{#each @root.merge_feature_branches_output.task_by_id}}
+{{#each @root.merge_feature_branches_output.found_task_by_id}}
 +-------------------------------------------------
 | 📑 Task T{{@key}}
 +-------------------------------------------------
 |
-  {{~#with (lookup @root.merge_result_summary_by_task_id @key) as |merge_result_summary| ~}}
-    {{~#each merge_result_summary.success_merge_results}}
+  {{#with (lookup @root.merge_result_summary_by_task_id @key) as |merge_result_summary|}}
+    {{#each merge_result_summary.success_merge_results}}
 | [👌 merged into master] {{ this.repo_config.github_path }} {{ this.pull_request_url }}
-    {{~/each~}}
-    {{~#each merge_result_summary.failed_merge_results}}
+    {{/each}}
+
+    {{#each merge_result_summary.failed_merge_results}}
 | [🚒 failed] {{ this.repo_config.github_path }} {{ this.pull_request_url }}
-    {{~/each~}}
-    {{~#each merge_result_summary.already_in_master_branch_related_commits}}
+    {{/each}}
+
+    {{#each merge_result_summary.already_in_master_branch_related_commits}}
 | [🤷 already in master] {{ this.repo_config.github_path }}
-    {{~/each~}}
-  {{~/with}}
+    {{/each}}
+  {{/with}}
 |
-+-------------------------------------------------
+•
 {{/each}}
-
-
+•
 🛠  Not found tasks
 =======================================
-{{#each @root.not_found_user_task_mapping_by_task_id~}}
+{{#each @root.not_found_user_task_mapping_by_task_id}}
 🔮 Task T{{@key}} - {{this.0.username}}
-{{/each~}}
+{{/each}}
