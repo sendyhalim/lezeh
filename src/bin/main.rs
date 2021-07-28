@@ -4,18 +4,39 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
+use serde::Serialize;
 
+use lib::clients::deployment_client::FailedMergeTaskOutput;
 use lib::clients::deployment_client::GlobalDeploymentClient;
-use lib::clients::deployment_client::MergeAllTasksOutput;
+use lib::clients::deployment_client::SuccesfulMergeTaskOutput;
+use lib::clients::deployment_client::TaskInMasterBranch;
 use lib::clients::deployment_client::UserTaskMapping;
 use lib::clients::url_client::LezehUrlClient;
 use lib::config::Config;
+use lib::renderers::handlebars::HandlebarsRenderer;
 use lib::types::ResultDynError;
 
 use slog::*;
 
 pub mod built_info {
   include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
+#[derive(Debug, Serialize)]
+struct TaskMergeSummary<'a> {
+  success_merge_results: Vec<&'a SuccesfulMergeTaskOutput>,
+  failed_merge_results: Vec<&'a FailedMergeTaskOutput>,
+  already_in_master_branch_related_commits: Vec<&'a TaskInMasterBranch>,
+}
+
+impl<'a> Default for TaskMergeSummary<'a> {
+  fn default() -> Self {
+    return TaskMergeSummary {
+      success_merge_results: Default::default(),
+      failed_merge_results: Default::default(),
+      already_in_master_branch_related_commits: Default::default(),
+    };
+  }
 }
 
 #[tokio::main]
@@ -99,7 +120,7 @@ async fn handle_deployment_cli(
   config: Config,
   logger: Logger,
 ) -> ResultDynError<()> {
-  let deployment_client = GlobalDeploymentClient::new(config, logger)?;
+  let deployment_client = GlobalDeploymentClient::new(config.clone(), logger)?;
 
   if let Some(deploy_cli) = cli.subcommand_matches("deploy") {
     let repo_key: &str = deploy_cli.value_of("repo_key").unwrap();
@@ -114,103 +135,84 @@ async fn handle_deployment_cli(
       .map(Into::into)
       .collect();
 
-    let output = deployment_client.merge_feature_branches(&task_ids).await?;
-    let not_found_user_task_mapping_by_task_id: HashMap<String, &UserTaskMapping> = output
-      .not_found_user_task_mappings
-      .iter()
-      .map(|user_task_mapping| {
-        return (user_task_mapping.1.id.clone(), user_task_mapping);
-      })
-      .collect();
-
-    let task_id_merge_infos: Vec<(String, String)> = output
-      .merge_all_tasks_outputs
-      .iter()
-      .flat_map(|merge_all_tasks_output: &MergeAllTasksOutput| {
-        let mut task_id_repo_master_branch_pairs: Vec<(String, String)> = merge_all_tasks_output
-          .tasks_in_master_branch
-          .iter()
-          .map(|tasks_in_master_branch| {
-            return (
-              tasks_in_master_branch.task_id.clone(),
-              format!(
-                "🙌 [already in master] {}",
-                merge_all_tasks_output.repo_path
-              ),
-            );
-          })
-          .collect();
-
-        let mut task_id_successful_merge_task_pairs: Vec<(String, String)> = merge_all_tasks_output
-          .successful_merge_task_operations
-          .iter()
-          .map(|successful_merge_output| {
-            return (
-              successful_merge_output.task_id.clone(),
-              format!(
-                "👌 [merged into master] {}",
-                merge_all_tasks_output.repo_path
-              ),
-            );
-          })
-          .collect();
-
-        let mut task_id_failed_merge_task_pairs: Vec<(String, String)> = merge_all_tasks_output
-          .failed_merge_task_operations
-          .iter()
-          .map(|failed_merge_output| {
-            return (
-              failed_merge_output.task_id.clone(),
-              format!(
-                "👎 [merging failed] {} {}",
-                merge_all_tasks_output.repo_path, failed_merge_output.pull_request_url
-              ),
-            );
-          })
-          .collect();
-
-        let mut task_pairs: Vec<(String, String)> = vec![];
-        task_pairs.append(&mut task_id_repo_master_branch_pairs);
-        task_pairs.append(&mut task_id_successful_merge_task_pairs);
-        task_pairs.append(&mut task_id_failed_merge_task_pairs);
-
-        return task_pairs;
-      })
-      .collect();
-
-    let mut merged_infos_by_task_id: HashMap<String, Vec<String>> = HashMap::new();
-
-    for (task_id, merge_info) in task_id_merge_infos.into_iter() {
-      merged_infos_by_task_id
-        .entry(task_id)
-        .or_insert(vec![])
-        .push(merge_info);
-    }
-
-    for (task_id, merged_infos) in merged_infos_by_task_id.iter() {
-      // TODO: Create a DTO for view-level task, where we have auto-formatted
-      // task id with format 'T{canonicalTaskId}'
-      println!("📑 Task T{}:", task_id);
-      println!("=======================================");
-
-      for merge_info in merged_infos.iter() {
-        println!("{}", merge_info);
-      }
-
-      println!("\n");
-    }
-
-    println!("🛠  Not found tasks");
-    println!("=======================================");
+    let merge_feature_branches_output = deployment_client.merge_feature_branches(&task_ids).await?;
     let not_found_user_task_mapping_by_task_id: HashMap<String, &UserTaskMapping> =
-      not_found_user_task_mapping_by_task_id
-        .into_iter()
-        .filter(|(task_id, _)| merged_infos_by_task_id.get(task_id).is_none())
+      merge_feature_branches_output
+        .not_found_user_task_mappings
+        .iter()
+        .map(|user_task_mapping| {
+          return (user_task_mapping.1.id.clone(), user_task_mapping);
+        })
         .collect();
 
-    for (task_id, UserTaskMapping(user, _task)) in not_found_user_task_mapping_by_task_id.iter() {
-      println!("🔮 Task T{} - {}", task_id, user.username);
+    let mut template_data: HashMap<&str, Box<dyn erased_serde::Serialize>> = HashMap::new();
+
+    let mut merge_result_summary_by_task_id: HashMap<String, TaskMergeSummary> = Default::default();
+
+    for (task_id, _) in merge_feature_branches_output.task_by_id.iter() {
+      let task_summary = merge_result_summary_by_task_id
+        .entry(task_id.clone())
+        .or_default();
+
+      for merge_all_task_output in merge_feature_branches_output.merge_all_tasks_outputs.iter() {
+        let task_in_master_branch = merge_all_task_output
+          .task_in_master_branch_by_task_id
+          .get(task_id);
+
+        if task_in_master_branch.is_some() {
+          task_summary
+            .already_in_master_branch_related_commits
+            .push(task_in_master_branch.unwrap());
+        }
+
+        let successful_merge_task = merge_all_task_output
+          .successful_merge_task_output_by_task_id
+          .get(task_id);
+
+        if successful_merge_task.is_some() {
+          task_summary
+            .success_merge_results
+            .push(successful_merge_task.unwrap());
+        }
+
+        let failed_merge_task = merge_all_task_output
+          .failed_merge_task_output_by_task_id
+          .get(task_id);
+
+        if failed_merge_task.is_some() {
+          task_summary
+            .failed_merge_results
+            .push(failed_merge_task.unwrap());
+        }
+      }
     }
+
+    template_data.insert(
+      "merge_result_summary_by_task_id",
+      Box::from(merge_result_summary_by_task_id),
+    );
+
+    template_data.insert(
+      "merge_feature_branches_output",
+      Box::from(&merge_feature_branches_output),
+    );
+
+    template_data.insert(
+      "not_found_user_task_mapping_by_task_id",
+      Box::from(not_found_user_task_mapping_by_task_id),
+    );
+
+    let output: String = HandlebarsRenderer::new().render_from_template_path(
+      &config
+        .deployment
+        .merge_feature_branches
+        .unwrap()
+        .output_template_path
+        .unwrap(),
+      template_data,
+    )?;
+
+    println!("{}", output);
   }
 
   return Ok(());
