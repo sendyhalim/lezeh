@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use crate::asset::Asset;
 use crate::types::ResultDynError;
 
 pub struct HandlebarsRenderer {
@@ -22,5 +25,18 @@ impl HandlebarsRenderer {
       .handlebars_client
       .render_template(template, &handlebars::to_json(json_serializible))
       .map_err(failure::err_msg);
+  }
+
+  pub fn render_from_template_path(
+    &self,
+    template_path: &str,
+    json_serializible: impl serde::Serialize,
+  ) -> ResultDynError<String> {
+    let buf: Cow<[u8]> = Asset::get(template_path).unwrap();
+    let buf: &[u8] = buf.as_ref();
+
+    let template_string: String = String::from_utf8(Vec::from(buf)).unwrap();
+
+    return self.render(&template_string, json_serializible);
   }
 }

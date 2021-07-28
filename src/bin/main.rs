@@ -202,7 +202,7 @@ async fn handle_deployment_cli(
       Box::from(not_found_user_task_mapping_by_task_id),
     );
 
-    let output: String = HandlebarsRenderer::new().render(
+    let output: String = HandlebarsRenderer::new().render_from_template_path(
       &config
         .deployment
         .merge_feature_branches

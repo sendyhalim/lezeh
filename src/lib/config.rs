@@ -56,13 +56,8 @@ pub struct MergeFeatureBranchesConfig {
 
 impl Default for MergeFeatureBranchesConfig {
   fn default() -> Self {
-    let buf: Cow<[u8]> = Asset::get("merge_feature_branches_default.hbs").unwrap();
-    let buf: &[u8] = buf.as_ref();
-
-    let output_template_path: String = String::from_utf8(Vec::from(buf)).unwrap();
-
     return MergeFeatureBranchesConfig {
-      output_template_path: Some(output_template_path),
+      output_template_path: Some("merge_feature_branches_default.hbs".to_owned()),
     };
   }
 }
@@ -88,9 +83,8 @@ impl Config {
     let mut config: Config = serde_yaml::from_str(&config_str)?;
 
     if config.deployment.merge_feature_branches.is_none() {
-      config.deployment.merge_feature_branches = Default::default();
+      config.deployment.merge_feature_branches = Some(Default::default());
     }
-    println!("{:?}", config);
 
     return Ok(config);
   }
