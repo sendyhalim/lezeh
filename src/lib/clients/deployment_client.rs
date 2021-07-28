@@ -119,6 +119,7 @@ pub struct MergeAllTasksOutput {
 pub struct MergeFeatureBranchesOutput {
   pub merge_all_tasks_outputs: Vec<MergeAllTasksOutput>,
   pub task_by_id: HashMap<String, Task>,
+  pub found_task_by_id: HashMap<String, Task>,
   pub not_found_user_task_mappings: Vec<UserTaskMapping>,
 }
 
@@ -193,9 +194,25 @@ impl GlobalDeploymentClient {
     let not_found_user_task_mappings =
       TaskUtil::find_not_found_tasks(&merge_results, &task_by_id, &task_assignee_by_phid);
 
+    let found_task_by_id: HashMap<String, Task> = task_by_id
+      .iter()
+      .filter(|(task_id, _)| {
+        return not_found_user_task_mappings
+          .iter()
+          .find(|UserTaskMapping(_user, not_found_task)| {
+            return not_found_task.id == **task_id;
+          })
+          .is_none();
+      })
+      .map(|(key, task_reference): (&String, &Task)| {
+        return (key.clone(), task_reference.clone());
+      })
+      .collect();
+
     return Ok(MergeFeatureBranchesOutput {
       merge_all_tasks_outputs: merge_results,
       not_found_user_task_mappings,
+      found_task_by_id,
       task_by_id,
     });
   }
