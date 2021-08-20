@@ -155,14 +155,14 @@ async fn handle_deployment_cli(
         .or_default();
 
       for merge_all_task_output in merge_feature_branches_output.merge_all_tasks_outputs.iter() {
-        let task_in_master_branch = merge_all_task_output
-          .task_in_master_branch_by_task_id
+        let tasks_in_master_branch = merge_all_task_output
+          .tasks_in_master_branch_by_task_id
           .get(task_id);
 
-        if task_in_master_branch.is_some() {
+        if tasks_in_master_branch.is_some() {
           task_summary
             .already_in_master_branch_related_commits
-            .push(task_in_master_branch.unwrap());
+            .extend(tasks_in_master_branch.unwrap());
         }
 
         let successful_merge_task = merge_all_task_output

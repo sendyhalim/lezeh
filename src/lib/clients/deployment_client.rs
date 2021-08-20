@@ -109,7 +109,7 @@ pub struct FailedMergeTaskOutput {
 #[derive(Debug, Serialize)]
 pub struct MergeAllTasksOutput {
   pub repo_path: String,
-  pub task_in_master_branch_by_task_id: HashMap<String, TaskInMasterBranch>,
+  pub tasks_in_master_branch_by_task_id: HashMap<String, Vec<TaskInMasterBranch>>,
   pub matched_task_branch_mappings: Vec<MatchedTaskBranchMapping>,
   pub successful_merge_task_output_by_task_id: HashMap<String, SuccesfulMergeTaskOutput>,
   pub failed_merge_task_output_by_task_id: HashMap<String, FailedMergeTaskOutput>,
@@ -440,7 +440,9 @@ impl RepositoryDeploymentClient {
 
     let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
       TaskUtil::create_matching_task_and_branch(&task_ids, &remote_branches.split('\n').collect());
-    let task_in_master_branch_by_task_id = self.task_in_master_branch_by_task_id(&task_ids).await?;
+
+    let tasks_in_master_branch_by_task_id =
+      self.tasks_in_master_branch_by_task_id(&task_ids).await?;
 
     let all: Vec<futures::future::BoxFuture<(String, ResultDynError<SuccesfulMergeOutput>)>> =
       filtered_branch_mappings
@@ -537,7 +539,7 @@ impl RepositoryDeploymentClient {
       .collect();
 
     return Ok(MergeAllTasksOutput {
-      task_in_master_branch_by_task_id,
+      tasks_in_master_branch_by_task_id,
       matched_task_branch_mappings: filtered_branch_mappings,
       repo_path: self.config.github_path.clone(),
       successful_merge_task_output_by_task_id,
@@ -580,12 +582,13 @@ impl RepositoryDeploymentClient {
     return Ok(merge_output);
   }
 
-  async fn task_in_master_branch_by_task_id(
+  async fn tasks_in_master_branch_by_task_id(
     &self,
     task_ids: &Vec<&str>,
-  ) -> ResultDynError<HashMap<String, TaskInMasterBranch>> {
+  ) -> ResultDynError<HashMap<String, Vec<TaskInMasterBranch>>> {
+    // TODO: Make spawn_command_from_str to work on space (do not split by space)
     let git_log_handle = self.preset_command.spawn_command_from_str(
-      "git log --oneline --pretty=format:%s",
+      "git log --oneline --no-decorate", // In format {abbreviatedHash} {message}
       None,
       Some(Stdio::piped()),
     )?;
@@ -608,35 +611,48 @@ impl RepositoryDeploymentClient {
       .wait_with_output()?;
 
     let grep_output = command::handle_command_output(grep_output)?;
-    let commit_messages: Vec<&str> = grep_output.lines().collect();
+    let commit_messages: Vec<&str> = grep_output
+      .lines()
+      .filter(|line| {
+        return !line.contains("Merge pull request");
+      })
+      .collect();
 
-    return Ok(
-      task_ids
-        .iter()
-        .flat_map(|task_id| -> Vec<(String, String)> {
-          return commit_messages
-            .iter()
-            .filter_map(|commit_message: &&str| -> Option<(String, String)> {
-              if !commit_message.contains(task_id) {
-                return None;
-              }
+    // Iterate all task ids and find which one
+    // is in the commit messages, double loop here
+    let task_id_commit_message_pairs: Vec<(String, String)> = task_ids
+      .iter()
+      .flat_map(|task_id| -> Vec<(String, String)> {
+        // First loop
+        return commit_messages
+          .iter()
+          .filter_map(|commit_message: &&str| -> Option<(String, String)> {
+            // 2nd loop
+            if !commit_message.contains(task_id) {
+              return None;
+            }
 
-              return Some((String::from(*task_id), String::from(*commit_message)));
-            })
-            .collect();
-        })
-        .map(|(task_id, commit_message)| {
-          return (
-            task_id.clone(),
-            TaskInMasterBranch {
-              repo_config: self.config.clone(),
-              task_id,
-              commit_message,
-            },
-          );
-        })
-        .collect(),
-    );
+            return Some((String::from(*task_id), String::from(*commit_message)));
+          })
+          .collect();
+      })
+      .collect();
+
+    let mut tasks_in_master_branch_by_id: HashMap<String, Vec<TaskInMasterBranch>> =
+      Default::default();
+
+    for (task_id, commit_message) in task_id_commit_message_pairs {
+      tasks_in_master_branch_by_id
+        .entry(task_id.clone())
+        .or_insert(Default::default())
+        .push(TaskInMasterBranch {
+          repo_config: self.config.clone(),
+          task_id,
+          commit_message,
+        });
+    }
+
+    return Ok(tasks_in_master_branch_by_id);
   }
 }
 
@@ -694,7 +710,7 @@ impl TaskUtil {
         *current_counter += 1;
       }
 
-      for (task_id, _) in merge_result.task_in_master_branch_by_task_id.iter() {
+      for (task_id, _) in merge_result.tasks_in_master_branch_by_task_id.iter() {
         let current_counter = found_task_count_by_id
           .get_mut(PhabricatorClient::clean_id(task_id))
           .unwrap();
@@ -779,7 +795,7 @@ mod test {
 
       let merge_results: Vec<MergeAllTasksOutput> = vec![MergeAllTasksOutput {
         repo_path: String::from("/foo"),
-        task_in_master_branch_by_task_id: HashMap::new(),
+        tasks_in_master_branch_by_task_id: Default::default(),
         matched_task_branch_mappings: vec![MatchedTaskBranchMapping(
           "3333".into(),
           "origin/bar_T3333_foo".into(),
