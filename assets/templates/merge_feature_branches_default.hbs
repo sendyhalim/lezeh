@@ -14,6 +14,8 @@
 
     {{#each merge_result_summary.already_in_master_branch_related_commits}}
 | [🤷 already in master] {{ this.repo_config.github_path }}
+| 🗞  {{{ this.commit_message }}}
+| --
     {{/each}}
   {{/with}}
 |
