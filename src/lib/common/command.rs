@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::types::ResultDynError;
-use crate::utils;
+use crate::common::types::ResultDynError;
+use crate::common::utils;
 
 /// A command that has some presets such as:
 /// - Working directory

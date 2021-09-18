@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use crate::asset::Asset;
-use crate::types::ResultDynError;
+use crate::common::asset::Asset;
+use crate::common::types::ResultDynError;
 
 pub struct HandlebarsRenderer {
   handlebars_client: handlebars::Handlebars<'static>,

@@ -6,15 +6,15 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use serde::Serialize;
 
-use lib::clients::deployment_client::FailedMergeTaskOutput;
-use lib::clients::deployment_client::GlobalDeploymentClient;
-use lib::clients::deployment_client::SuccesfulMergeTaskOutput;
-use lib::clients::deployment_client::TaskInMasterBranch;
-use lib::clients::deployment_client::UserTaskMapping;
-use lib::clients::url_client::LezehUrlClient;
-use lib::config::Config;
-use lib::renderers::handlebars::HandlebarsRenderer;
-use lib::types::ResultDynError;
+use lib::common::config::Config;
+use lib::common::handlebars::HandlebarsRenderer;
+use lib::common::types::ResultDynError;
+use lib::deployment::client::FailedMergeTaskOutput;
+use lib::deployment::client::GlobalDeploymentClient;
+use lib::deployment::client::SuccesfulMergeTaskOutput;
+use lib::deployment::client::TaskInMasterBranch;
+use lib::deployment::client::UserTaskMapping;
+use lib::url::client::LezehUrlClient;
 
 use slog::*;
 

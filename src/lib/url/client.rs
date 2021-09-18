@@ -1,7 +1,7 @@
 use url::form_urlencoded;
 
-use crate::config::BitlyConfig;
-use crate::types::ResultDynError;
+use crate::common::config::BitlyConfig;
+use crate::common::types::ResultDynError;
 
 pub struct LezehUrlClient {
   config: BitlyConfig,

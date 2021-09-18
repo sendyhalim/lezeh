@@ -17,11 +17,11 @@ use serde::Serialize;
 use serde_json::Value;
 use slog::Logger;
 
-use crate::command;
-use crate::command::PresetCommand;
-use crate::config::Config;
-use crate::config::RepositoryConfig;
-use crate::types::ResultDynError;
+use crate::common::command;
+use crate::common::command::PresetCommand;
+use crate::common::config::Config;
+use crate::common::config::RepositoryConfig;
+use crate::common::types::ResultDynError;
 
 pub struct GlobalDeploymentClient {
   pub config: Config,

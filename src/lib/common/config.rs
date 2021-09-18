@@ -5,8 +5,8 @@ use std::{borrow::Cow, collections::HashMap};
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::asset::Asset;
-use crate::types::ResultDynError;
+use crate::common::asset::Asset;
+use crate::common::types::ResultDynError;
 
 /// Phab config
 /// -------------
