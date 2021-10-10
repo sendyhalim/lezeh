@@ -586,7 +586,6 @@ impl RepositoryDeploymentClient {
     &self,
     task_ids: &Vec<&str>,
   ) -> ResultDynError<HashMap<String, Vec<TaskInMasterBranch>>> {
-    // TODO: Make spawn_command_from_str to work on space (do not split by space)
     let git_log_handle = self.preset_command.spawn_command_from_str(
       "git log --oneline --no-decorate", // In format {abbreviatedHash} {message}
       None,
