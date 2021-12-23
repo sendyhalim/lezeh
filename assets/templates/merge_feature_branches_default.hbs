@@ -9,7 +9,8 @@
     {{/each}}
 
     {{#each merge_result_summary.failed_merge_results}}
-| [🚒 failed] {{ this.repo_config.github_path }} {{ this.pull_request_url }}
+| [🚒 failed] {{ this.repo_config.github_path }} {{ this.debug_url }}
+|   {{ this.message }}
     {{/each}}
 
     {{#each merge_result_summary.already_in_master_branch_related_commits}}

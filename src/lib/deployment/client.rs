@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::{collections::HashMap, hash::Hash};
 
 use failure::Fail;
 use futures::FutureExt;
@@ -82,6 +82,14 @@ pub enum ClientOperationError {
     remote_branch: String,
     pull_request_url: String,
   },
+  #[fail(
+    display = "Remote branch is behind master(no changes to master), remote branch {}",
+    remote_branch
+  )]
+  RemoteBranchIsBehindMasterError {
+    remote_branch: String,
+    debug_url: String,
+  },
 }
 
 #[derive(Debug, Serialize)]
@@ -103,7 +111,8 @@ pub struct FailedMergeTaskOutput {
   pub repo_config: RepositoryConfig,
   pub task_id: String,
   pub remote_branch: String,
-  pub pull_request_url: String,
+  pub debug_url: String,
+  pub message: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -288,6 +297,7 @@ impl RepositoryDeploymentClient {
       })
       .await?;
 
+    // Create pull request if there's none of it yet.
     if pull_request.is_none() {
       let input = github_pull_request::CreatePullRequestInput {
         title: pull_request_title,
@@ -297,8 +307,36 @@ impl RepositoryDeploymentClient {
       };
 
       slog::info!(self.logger, "Creating PR {:?}", input);
-      let res_body: Value = self.ghub.pull_request.create(input).await?;
-      slog::info!(self.logger, "Done creating PR");
+
+      // Add this point creating pull request might fail due to many things.
+      // One of the case that we should handle is when
+      // the remote branch is behind master branch, in other words, the remote
+      // branch does not have any commits to be merged. This can happen
+      // because of 2 things:
+      // A) It's already merged but the remote branch is not cleaned up yet
+      // B) People just create remote branch but haven't pushed into it yet.
+      //
+      // The easiest way is to just return a specialized error
+      // so the caller can handle this case.
+      let res_body: Value = self.ghub.pull_request.create(input).await.map_err(|err| {
+        if err
+          .to_string()
+          .to_lowercase()
+          .starts_with("no commits between master")
+        {
+          let remote_branch: String = source_branch_name.into();
+
+          return ClientOperationError::RemoteBranchIsBehindMasterError {
+            remote_branch: remote_branch.clone(),
+            debug_url: format!("https://github.com/{}/tree/{}", repo_path, remote_branch),
+          }
+          .into();
+        }
+
+        return err;
+      })?;
+
+      slog::info!(self.logger, "Done creating PR {:?}", res_body);
       slog::debug!(self.logger, "Response body {:?}", res_body);
 
       // Wait for 2 seconds to give github sometime to calculate mergeability
@@ -502,23 +540,28 @@ impl RepositoryDeploymentClient {
 
     let failed_merge_task_output_by_task_id: HashMap<_, _> = failures
       .into_iter()
-      .map(|(task_id, possible_merge_error)| {
-        let err = possible_merge_error.err().unwrap();
-        let ClientOperationError::MergeError {
-          remote_branch,
-          pull_request_url,
-        } = err.downcast_ref().unwrap();
+      .map(
+        |(task_id, possible_merge_error): (String, ResultDynError<SuccesfulMergeOutput>)| -> (String, FailedMergeTaskOutput) {
+          let err = possible_merge_error.err().unwrap();
+          let client_operation_error: &ClientOperationError = err.downcast_ref().unwrap();
 
-        return (
-          task_id.clone(),
-          FailedMergeTaskOutput {
-            repo_config: self.config.clone(),
-            task_id: task_id.clone(),
-            remote_branch: String::from(remote_branch),
-            pull_request_url: String::from(pull_request_url),
-          },
-        );
-      })
+          let (remote_branch, debug_url) = match client_operation_error {
+            ClientOperationError::MergeError{remote_branch, pull_request_url} => (remote_branch, pull_request_url),
+            ClientOperationError::RemoteBranchIsBehindMasterError{remote_branch, debug_url} => (remote_branch, debug_url),
+          };
+
+          return (
+            task_id.clone(),
+            FailedMergeTaskOutput {
+              repo_config: self.config.clone(),
+              task_id: task_id.clone(),
+              remote_branch: String::from(remote_branch),
+              debug_url: String::from(debug_url),
+              message: client_operation_error.to_string()
+            },
+          );
+        },
+      )
       .collect();
 
     let successful_merge_task_output_by_task_id: HashMap<_, _> = successes
