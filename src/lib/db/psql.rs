@@ -157,34 +157,32 @@ fn psql_tables_from_foreign_key_info_rows(
   // we'll fill the reverse order referenced relations later on after we have
   // all of the tables data.
   for row in rows.iter() {
-    table_by_name
+    let table = table_by_name
       .entry(row.table_name.clone())
-      .or_insert_with(|| {
-        let mut referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey> =
-          Default::default();
-        let constraint_name: String = row.constraint_name.clone();
-
-        referencing_fk_by_constraint_name.insert(
-          constraint_name.clone(),
-          PsqlForeignKey {
-            name: constraint_name.clone(),
-            column: PsqlTableColumn {
-              name: row.column_name.clone(),
-              data_type: row.column_data_type.clone(),
-            },
-            foreign_table_schema: row.foreign_table_schema.clone(),
-            foreign_table_name: row.foreign_table_name.clone(),
-          },
-        );
-
-        return PsqlTable {
-          schema: row.table_schema.clone(),
-          name: row.table_name.clone(),
-          columns: Default::default(),
-          referenced_fk_by_constraint_name: Default::default(),
-          referencing_fk_by_constraint_name,
-        };
+      .or_insert(PsqlTable {
+        schema: row.table_schema.clone(),
+        name: row.table_name.clone(),
+        columns: Default::default(),
+        referenced_fk_by_constraint_name: Default::default(),
+        referencing_fk_by_constraint_name: Default::default(),
       });
+
+    // We can start filling referencing_fk data first
+    // because every row contains info of how a table references another table
+    let constraint_name: String = row.constraint_name.clone();
+
+    table.referencing_fk_by_constraint_name.insert(
+      constraint_name.clone(),
+      PsqlForeignKey {
+        name: constraint_name.clone(),
+        column: PsqlTableColumn {
+          name: row.column_name.clone(),
+          data_type: row.column_data_type.clone(),
+        },
+        foreign_table_schema: row.foreign_table_schema.clone(),
+        foreign_table_name: row.foreign_table_name.clone(),
+      },
+    );
   }
 
   return table_by_name;
@@ -197,37 +195,8 @@ mod test {
 
     #[test]
     fn it_should_load_rows() {
+      // Db diagram view https://dbdiagram.io/d/6205540d85022f4ee57331e2
       let fk_info_rows = vec![
-        ForeignKeyInformationRow {
-          table_schema: "public".into(),
-          constraint_name: "ecommerce_carts_store_customer_id_foreign".into(),
-          table_name: "ecommerce_carts".into(),
-          column_name: "store_customer_id".into(),
-          column_data_type: "integer".into(),
-          foreign_table_schema: "public".into(),
-          foreign_table_name: "store_customers".into(),
-          foreign_column_name: "id".into(),
-        },
-        ForeignKeyInformationRow {
-          table_schema: "public".into(),
-          constraint_name: "product_variant_types_product_id_foreign".into(),
-          table_name: "product_variant_types".into(),
-          column_name: "product_id".into(),
-          column_data_type: "integer".into(),
-          foreign_table_schema: "public".into(),
-          foreign_table_name: "products".into(),
-          foreign_column_name: "id".into(),
-        },
-        ForeignKeyInformationRow {
-          table_schema: "public".into(),
-          constraint_name: "product_variants_product_variant_type_id_foreign".into(),
-          table_name: "product_variants".into(),
-          column_name: "product_variant_type_id".into(),
-          column_data_type: "integer".into(),
-          foreign_table_schema: "public".into(),
-          foreign_table_name: "product_variant_types".into(),
-          foreign_column_name: "id".into(),
-        },
         ForeignKeyInformationRow {
           table_schema: "public".into(),
           constraint_name: "orders_store_id_foreign".into(),
@@ -236,16 +205,6 @@ mod test {
           column_data_type: "integer".into(),
           foreign_table_schema: "public".into(),
           foreign_table_name: "stores".into(),
-          foreign_column_name: "id".into(),
-        },
-        ForeignKeyInformationRow {
-          table_schema: "public".into(),
-          constraint_name: "order_payment_confirmations_order_id_foreign".into(),
-          table_name: "order_payment_confirmations".into(),
-          column_name: "order_id".into(),
-          column_data_type: "integer".into(),
-          foreign_table_schema: "public".into(),
-          foreign_table_name: "orders".into(),
           foreign_column_name: "id".into(),
         },
         ForeignKeyInformationRow {
@@ -276,16 +235,6 @@ mod test {
           column_data_type: "integer".into(),
           foreign_table_schema: "public".into(),
           foreign_table_name: "products".into(),
-          foreign_column_name: "id".into(),
-        },
-        ForeignKeyInformationRow {
-          table_schema: "public".into(),
-          constraint_name: "product_variant_templates_store_id_foreign".into(),
-          table_name: "product_variant_templates".into(),
-          column_name: "store_id".into(),
-          column_data_type: "integer".into(),
-          foreign_table_schema: "public".into(),
-          foreign_table_name: "stores".into(),
           foreign_column_name: "id".into(),
         },
         ForeignKeyInformationRow {
@@ -330,16 +279,6 @@ mod test {
         },
         ForeignKeyInformationRow {
           table_schema: "public".into(),
-          constraint_name: "tags_store_id_foreign".into(),
-          table_name: "tags".into(),
-          column_name: "store_id".into(),
-          column_data_type: "integer".into(),
-          foreign_table_schema: "public".into(),
-          foreign_table_name: "stores".into(),
-          foreign_column_name: "id".into(),
-        },
-        ForeignKeyInformationRow {
-          table_schema: "public".into(),
           constraint_name: "products_store_id_foreign".into(),
           table_name: "products".into(),
           column_name: "store_id".into(),
@@ -360,12 +299,12 @@ mod test {
         },
         ForeignKeyInformationRow {
           table_schema: "public".into(),
-          constraint_name: "tagged_models_tag_id_foreign".into(),
-          table_name: "tagged_models".into(),
-          column_name: "tag_id".into(),
+          constraint_name: "order_items_product_id_foreign".into(),
+          table_name: "order_items".into(),
+          column_name: "product_id".into(),
           column_data_type: "integer".into(),
           foreign_table_schema: "public".into(),
-          foreign_table_name: "tags".into(),
+          foreign_table_name: "products".into(),
           foreign_column_name: "id".into(),
         },
       ];
@@ -373,11 +312,13 @@ mod test {
       let psql_tables: HashMap<TableName, PsqlTable> =
         psql_tables_from_foreign_key_info_rows(&fk_info_rows);
 
+      // Make sure relations are set correctly
+      // -------------------------------------------
+      // table: order_items
       let order_items_table: &PsqlTable = psql_tables.get("order_items").unwrap();
 
-      // Make sure relations are set correctly
       assert_eq!(order_items_table.name, "order_items");
-      assert_eq!(order_items_table.referencing_fk_by_constraint_name.len(), 1);
+      assert_eq!(order_items_table.referencing_fk_by_constraint_name.len(), 2);
 
       let fk_to_orders_table_from_order_items = order_items_table
         .referencing_fk_by_constraint_name
@@ -385,8 +326,19 @@ mod test {
 
       assert!(fk_to_orders_table_from_order_items.is_some());
 
+      // table: store_staffs_stores
+      let store_staffs_stores_table: &PsqlTable = psql_tables.get("store_staffs_stores").unwrap();
+      assert_eq!(store_staffs_stores_table.name, "store_staffs_stores");
+      assert_eq!(
+        store_staffs_stores_table
+          .referencing_fk_by_constraint_name
+          .len(),
+        3
+      );
+
       // Make sure created tables have equal size
       // with unique table names in fk info rows
+      // -------------------------------------------
       let available_tables: BTreeSet<&String> =
         fk_info_rows.iter().map(|row| &row.table_name).collect();
 
