@@ -183,6 +183,30 @@ fn psql_tables_from_foreign_key_info_rows(
         foreign_table_name: row.foreign_table_name.clone(),
       },
     );
+
+    table.referenced_fk_by_constraint_name =
+      fk_info_rows_by_foreign_table_name.get(&table.name).map_or(
+        Default::default(),
+        |fk_info_rows: &Vec<&ForeignKeyInformationRow>| -> HashMap<String, PsqlForeignKey> {
+          return fk_info_rows
+            .iter()
+            .map(|row| {
+              return (
+                row.constraint_name.clone(),
+                PsqlForeignKey {
+                  name: row.constraint_name.clone(),
+                  column: PsqlTableColumn {
+                    name: row.column_name.clone(),
+                    data_type: row.column_data_type.clone(),
+                  },
+                  foreign_table_schema: row.foreign_table_schema.clone(),
+                  foreign_table_name: row.foreign_table_name.clone(),
+                },
+              );
+            })
+            .collect();
+        },
+      );
   }
 
   return table_by_name;
@@ -319,6 +343,7 @@ mod test {
 
       assert_eq!(order_items_table.name, "order_items");
       assert_eq!(order_items_table.referencing_fk_by_constraint_name.len(), 2);
+      assert_eq!(order_items_table.referenced_fk_by_constraint_name.len(), 0);
 
       let fk_to_orders_table_from_order_items = order_items_table
         .referencing_fk_by_constraint_name
@@ -335,6 +360,12 @@ mod test {
           .len(),
         3
       );
+
+      // table: store_staffs_stores
+      let products_table: &PsqlTable = psql_tables.get("products").unwrap();
+      assert_eq!(products_table.name, "products");
+      assert_eq!(products_table.referencing_fk_by_constraint_name.len(), 1);
+      assert_eq!(products_table.referenced_fk_by_constraint_name.len(), 3);
 
       // Make sure created tables have equal size
       // with unique table names in fk info rows
