@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
@@ -141,6 +142,72 @@ impl Psql {
       referencing_fk_by_constraint_name: Default::default(),
     });
   }
+}
+
+pub struct DbFetcher {
+  pub psql_table_by_name: HashMap<TableName, PsqlTable>,
+  psql: Psql,
+}
+
+pub struct FetchRowInput {
+  pub table_name: String,
+  pub id: String,
+}
+
+impl DbFetcher {
+  fn fetch_row(&self, input: &FetchRowInput) -> ResultDynError<Vec<Vec<Box<dyn Any>>>> {
+    let psql_table = self.psql_table_by_name.get(&input.table_name);
+
+    if psql_table.is_none() {
+      return Ok(vec![]);
+    }
+
+    let rows: Vec<HashMap<String, String>> = sql_query(format!(
+      "
+    SELECT * FROM {} where id = {}
+  ",
+      input.table_name, input.id
+    ))
+    .get_result(&self.psql.connection)?;
+
+    // Try to fetch the row first
+    // If it exists
+    //   create table relation b tree where the key is table name
+    //   check whether it has referencing tables (depends on its parent tables)
+    //     if yes then
+    //       parent_tables = map referencing tables as parent_table
+    //         parent = fetch go up 1 level by fetch_referencing_rows(
+    //           criteria: {
+    //             id: currentRow[referencing_column]
+    //             table: referencing_table
+    //           },
+    //           current_iteration: parent_table
+    //         )
+    //     otherwise
+    //       register the current table as root table
+    //       fetch the current row by
+    //          select * from {input.table_name} where id = {input.id}
+    //   check whether it has referenced tables (has children tables)
+    //     if yes then
+    //       child_tables = map referenced tables as child_tables
+    //       children = fetch 1 level down by fetch_referenced_rows(
+    //           criteria: {
+    //             id: currentRow[referenced_column]
+    //             table: referenced_table
+    //           },
+    //           current_iteration: child_table
+    //       )
+    //     otherwise stop
+    // else
+    //   return
+    return vec![];
+  }
+
+  // fn fetch_referencing_rows(table_tree: ) {
+  // }
+
+  // fn fetch_referenced_rows(table_tree: ) {
+  // }
 }
 
 fn psql_tables_from_foreign_key_info_rows(
