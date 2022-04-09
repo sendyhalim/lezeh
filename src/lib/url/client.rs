@@ -1,7 +1,7 @@
 use url::form_urlencoded;
 
 use crate::common::config::BitlyConfig;
-use crate::common::types::ResultDynError;
+use crate::common::types::ResultAnyError;
 
 pub struct LezehUrlClient {
   config: BitlyConfig,
@@ -14,7 +14,7 @@ impl LezehUrlClient {
 }
 
 impl LezehUrlClient {
-  pub async fn shorten(&self, long_url: &str) -> ResultDynError<String> {
+  pub async fn shorten(&self, long_url: &str) -> ResultAnyError<String> {
     let encoded_url = form_urlencoded::byte_serialize(long_url.as_bytes()).collect::<String>();
 
     let bitly_api = format!(
