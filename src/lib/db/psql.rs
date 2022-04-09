@@ -1,14 +1,15 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
-use diesel::pg::PgConnection;
-use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::Text;
+use anyhow::anyhow;
 use itertools::Itertools;
+use postgres::config::Config as PsqlConfig;
+use postgres::Client as PsqlClient;
+use postgres::Row;
 
-use crate::common::types::ResultDynError;
+use crate::common::types::ResultAnyError;
 
 type TableName = String;
 
@@ -34,43 +35,43 @@ pub struct PsqlTable {
   pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
 }
 
-#[derive(diesel::QueryableByName, PartialEq, Debug)]
-struct ForeignKeyInformationRow {
-  #[column_name = "table_schema"]
-  #[sql_type = "Text"]
+pub struct RoseTreeNode<T> {
+  pub parent: RefCell<Vec<RoseTreeNode<T>>>,
+  pub children: RefCell<Vec<RoseTreeNode<T>>>,
+  pub value: T,
+}
+
+impl<T> RoseTreeNode<T> {
+  fn new(value: T) -> RoseTreeNode<T> {
+    return RoseTreeNode {
+      parent: Default::default(),
+      children: Default::default(),
+      value,
+    };
+  }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct ForeignKeyInformationRow {
   table_schema: String,
 
-  #[column_name = "constraint_name"]
-  #[sql_type = "Text"]
   constraint_name: String,
 
-  #[column_name = "table_name"]
-  #[sql_type = "Text"]
   table_name: String,
 
-  #[column_name = "column_name"]
-  #[sql_type = "Text"]
   column_name: String,
 
-  #[column_name = "column_data_type"]
-  #[sql_type = "Text"]
   column_data_type: String,
 
-  #[column_name = "foreign_table_schema"]
-  #[sql_type = "Text"]
   foreign_table_schema: String,
 
-  #[column_name = "foreign_table_Name"]
-  #[sql_type = "Text"]
   foreign_table_name: String,
 
-  #[column_name = "foreign_column_name"]
-  #[sql_type = "Text"]
   foreign_column_name: String,
 }
 
 pub struct Psql {
-  connection: PgConnection,
+  client: PsqlClient,
 }
 
 pub struct PsqlCreds {
@@ -81,30 +82,30 @@ pub struct PsqlCreds {
 }
 
 impl Psql {
-  pub fn new(creds: &PsqlCreds) -> ResultDynError<Psql> {
-    let database_url = format!(
-      "postgres://{}@{}/{}", // TODO: Support password
-      creds.username,
-      // creds.password.unwrap(),
-      creds.host,
-      creds.database_name
-    );
-
+  pub fn new(creds: &PsqlCreds) -> ResultAnyError<Psql> {
     return Ok(Psql {
-      connection: PgConnection::establish(&database_url)?,
+      client: PsqlConfig::new()
+        .user(&creds.username)
+        // .password(creds.password.as_ref().unwrap()) // Should defaults to empty binary
+        .host(&creds.host)
+        .dbname(&creds.database_name)
+        .connect(postgres::NoTls)?,
     });
   }
 }
 
 impl Psql {
   pub fn load_table_structure(
-    &self,
-    table_name: String,
+    &mut self,
     schema: Option<String>,
-  ) -> ResultDynError<PsqlTable> {
+  ) -> ResultAnyError<Vec<ForeignKeyInformationRow>> {
+    // let a = RoseTreeNode::new("foo");
+
+    // a.parent.get_mut().push(RoseTreeNode::new("hi"));
+
     // First try to build the UML for all of the tables
     // we'll query from psql information_schema tables.
-    let fk_info_rows: Vec<ForeignKeyInformationRow> = sql_query(
+    let rows: Vec<Row> = self.client.query(
       "
     SELECT
       tc.constraint_name,
@@ -129,18 +130,28 @@ impl Psql {
           AND c.column_name = kcu.column_name
     WHERE tc.constraint_type = 'FOREIGN KEY';
   ",
-    )
-    .load(&self.connection)?;
+      &[],
+    )?;
 
-    println!("{:?}", fk_info_rows);
+    let fk_info_rows: Vec<ForeignKeyInformationRow> = rows
+      .into_iter()
+      .map(|row: Row| -> ForeignKeyInformationRow {
+        return ForeignKeyInformationRow {
+          table_schema: row.get("table_schema"),
+          constraint_name: row.get("constraint_name"),
+          table_name: row.get("table_name"),
+          column_name: row.get("column_name"),
+          column_data_type: row.get("column_data_type"),
+          foreign_table_schema: row.get("foreign_table_schema"),
+          foreign_table_name: row.get("foreign_table_name"),
+          foreign_column_name: row.get("foreign_column_name"),
+        };
+      })
+      .collect();
 
-    return Ok(PsqlTable {
-      schema: "public".to_owned(),
-      name: table_name,
-      columns: Default::default(),
-      referenced_fk_by_constraint_name: Default::default(),
-      referencing_fk_by_constraint_name: Default::default(),
-    });
+    // println!("{:#?}", fk_info_rows);
+
+    return Ok(fk_info_rows);
   }
 }
 
@@ -155,20 +166,24 @@ pub struct FetchRowInput {
 }
 
 impl DbFetcher {
-  fn fetch_row(&self, input: &FetchRowInput) -> ResultDynError<Vec<Vec<Box<dyn Any>>>> {
+  fn fetch_row(&mut self, input: &FetchRowInput) -> ResultAnyError<Vec<Vec<Box<dyn Any>>>> {
+    unimplemented!("unimplemented");
     let psql_table = self.psql_table_by_name.get(&input.table_name);
 
     if psql_table.is_none() {
       return Ok(vec![]);
     }
 
-    let rows: Vec<HashMap<String, String>> = sql_query(format!(
+    let rows: Vec<Row> = self.psql.client.query(
       "
-    SELECT * FROM {} where id = {}
-  ",
-      input.table_name, input.id
-    ))
-    .get_result(&self.psql.connection)?;
+    SELECT * FROM $1 where id = $2
+    ",
+      &[&input.table_name, &input.id],
+    )?;
+
+    let row: &Row = rows
+      .get(0)
+      .ok_or_else(|| anyhow!("Could not find row with id {}", input.id))?;
 
     // Try to fetch the row first
     // If it exists
@@ -200,7 +215,6 @@ impl DbFetcher {
     //     otherwise stop
     // else
     //   return
-    return vec![];
   }
 
   // fn fetch_referencing_rows(table_tree: ) {

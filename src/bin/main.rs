@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
 use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
@@ -8,7 +9,7 @@ use serde::Serialize;
 
 use lib::common::config::Config;
 use lib::common::handlebars::HandlebarsRenderer;
-use lib::common::types::ResultDynError;
+use lib::common::types::ResultAnyError;
 use lib::deployment::client::FailedMergeTaskOutput;
 use lib::deployment::client::GlobalDeploymentClient;
 use lib::deployment::client::SuccesfulMergeTaskOutput;
@@ -40,8 +41,22 @@ impl<'a> Default for TaskMergeSummary<'a> {
 }
 
 #[tokio::main]
-async fn main() -> ResultDynError<()> {
+async fn main() -> ResultAnyError<()> {
   env_logger::init();
+
+  let handle = std::thread::spawn(|| {
+    let mut psql = lib::db::psql::Psql::new(&lib::db::psql::PsqlCreds {
+      host: "localhost".to_owned(),
+      database_name: "gepeel_app".to_owned(),
+      username: "sendyhalim".to_owned(),
+      password: Option::None,
+    })
+    .unwrap();
+
+    let results = psql.load_table_structure(Option::None).unwrap();
+  });
+
+  handle.join().unwrap();
 
   let log_decorator = slog_term::TermDecorator::new().build();
   let log_drain = slog_term::CompactFormat::new(log_decorator).build().fuse();
@@ -119,7 +134,7 @@ async fn handle_deployment_cli(
   cli: &ArgMatches<'_>,
   config: Config,
   logger: Logger,
-) -> ResultDynError<()> {
+) -> ResultAnyError<()> {
   let deployment_client = GlobalDeploymentClient::new(config.clone(), logger)?;
 
   if let Some(deploy_cli) = cli.subcommand_matches("deploy") {
@@ -218,10 +233,8 @@ async fn handle_deployment_cli(
   return Ok(());
 }
 
-async fn handle_url_cli(cli: &ArgMatches<'_>, config: Config) -> ResultDynError<()> {
-  let bitly_config = config
-    .bitly
-    .ok_or(failure::err_msg("Could not get bitly config"))?;
+async fn handle_url_cli(cli: &ArgMatches<'_>, config: Config) -> ResultAnyError<()> {
+  let bitly_config = config.bitly.ok_or(anyhow!("Could not get bitly config"))?;
 
   let url_client = LezehUrlClient::new(bitly_config);
 

@@ -1,12 +1,11 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::{borrow::Cow, collections::HashMap};
 
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::common::asset::Asset;
-use crate::common::types::ResultDynError;
+use crate::common::types::ResultAnyError;
 
 /// Phab config
 /// -------------
@@ -78,7 +77,7 @@ pub struct Config {
 }
 
 impl Config {
-  pub fn new(setting_path: impl AsRef<Path>) -> ResultDynError<Config> {
+  pub fn new(setting_path: impl AsRef<Path>) -> ResultAnyError<Config> {
     let config_str = fs::read_to_string(setting_path)?;
     let mut config: Config = serde_yaml::from_str(&config_str)?;
 
