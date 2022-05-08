@@ -27,8 +27,12 @@ use crate::common::types::ResultAnyError;
 pub struct GlobalDeploymentClient {
   pub config: Config,
   phabricator: Arc<PhabricatorClient>,
-  ghub: Arc<GithubClient>,
   repository_deployment_client_by_key: HashMap<String, RepositoryDeploymentClient>,
+
+  #[allow(dead_code)]
+  ghub: Arc<GithubClient>,
+
+  #[allow(dead_code)]
   logger: Logger,
 }
 

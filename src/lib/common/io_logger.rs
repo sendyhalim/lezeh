@@ -9,6 +9,7 @@ pub(crate) struct LoggerAsSink {
 }
 
 impl LoggerAsSink {
+  #[allow(dead_code)]
   pub(crate) fn new(logger: Arc<Logger>) -> LoggerAsSink {
     return LoggerAsSink {
       logger: logger.clone(),

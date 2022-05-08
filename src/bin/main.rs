@@ -7,6 +7,8 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use serde::Serialize;
 
+use lib::db::psql;
+
 use lib::common::config::Config;
 use lib::common::handlebars::HandlebarsRenderer;
 use lib::common::types::ResultAnyError;
@@ -45,7 +47,7 @@ async fn main() -> ResultAnyError<()> {
   env_logger::init();
 
   let handle = std::thread::spawn(|| {
-    let mut psql = lib::db::psql::Psql::new(&lib::db::psql::PsqlCreds {
+    let mut psql = psql::Psql::new(&lib::db::psql::PsqlCreds {
       host: "localhost".to_owned(),
       database_name: "gepeel_app".to_owned(),
       username: "sendyhalim".to_owned(),
@@ -53,7 +55,34 @@ async fn main() -> ResultAnyError<()> {
     })
     .unwrap();
 
-    let results = psql.load_table_structure(Option::None).unwrap();
+    let psql_table_by_name = psql.load_table_structure(Option::None).unwrap();
+    let mut db_fetcher = psql::DbFetcher {
+      psql_table_by_name,
+      psql,
+    };
+
+    let tree = db_fetcher
+      .fetch_rose_trees_to_be_inserted(&psql::FetchRowInput {
+        schema: Some("public".to_owned()),
+        table_name: "orders".to_owned(),
+        column_name: "id".to_owned(),
+        column_value: "1250".to_owned(),
+      })
+      .unwrap();
+
+    println!(
+      "yoo {:#?}",
+      tree
+        .get(0)
+        .unwrap()
+        .children // BUG: Children still refers to orders
+        .borrow()
+        .get(0)
+        .unwrap()
+        .children // .value
+                  // .table
+                  // .name
+    );
   });
 
   handle.join().unwrap();
