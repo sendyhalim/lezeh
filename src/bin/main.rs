@@ -8,6 +8,8 @@ use clap::SubCommand;
 use serde::Serialize;
 
 use lib::db::psql;
+use lib::db::psql::PsqlTableRows;
+use lib::db::psql::RoseTreeNode;
 
 use lib::common::config::Config;
 use lib::common::handlebars::HandlebarsRenderer;
@@ -61,7 +63,7 @@ async fn main() -> ResultAnyError<()> {
       psql,
     };
 
-    let tree = db_fetcher
+    let trees = db_fetcher
       .fetch_rose_trees_to_be_inserted(&psql::FetchRowInput {
         schema: Some("public".to_owned()),
         table_name: "orders".to_owned(),
@@ -70,19 +72,7 @@ async fn main() -> ResultAnyError<()> {
       })
       .unwrap();
 
-    println!(
-      "yoo {:#?}",
-      tree
-        .get(0)
-        .unwrap()
-        .children // BUG: Children still refers to orders
-        .borrow()
-        .get(0)
-        .unwrap()
-        .children // .value
-                  // .table
-                  // .name
-    );
+    let mut tree: &RoseTreeNode<PsqlTableRows> = trees.get(0).unwrap();
   });
 
   handle.join().unwrap();
