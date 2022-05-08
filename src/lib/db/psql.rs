@@ -280,7 +280,6 @@ impl DbFetcher {
   ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRows>>> {
     let psql_table = self.psql_table_by_name.get(&input.table_name);
 
-    println!("{:#?}", self.psql_table_by_name);
     if psql_table.is_none() {
       return Ok(vec![]);
     }
@@ -304,9 +303,6 @@ impl DbFetcher {
       .unwrap()
       .clone();
 
-    let mut fetched_table_by_name: HashMap<String, PsqlTable> = Default::default();
-    fetched_table_by_name.insert(input.table_name.clone(), current_table.clone());
-
     // Fill the relationships in upper layers (parents)
     // ----------------------------------------
     //   check whether it has referencing tables (depends on its parent tables)
@@ -328,21 +324,17 @@ impl DbFetcher {
       rows: vec![row.clone()],
     });
 
-    let parents: Vec<RoseTreeNode<PsqlTableRows>> = current_table
-      .referencing_fk_by_constraint_name
-      .iter()
-      .filter_map(|(_key, psql_foreign_key)| {
-        return self
-          .fetch_referencing_row(
-            psql_foreign_key.clone(),
-            DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
-            &mut fetched_table_by_name,
-          )
-          .unwrap();
-      })
-      .collect();
+    let mut fetched_table_by_name: HashMap<String, PsqlTable> = Default::default();
 
-    row_node.parents = RefCell::new(parents);
+    let row_node_with_parents = self.fetch_referencing_rows(
+      current_table.clone(),
+      DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      &mut fetched_table_by_name,
+    )?;
+
+    if row_node_with_parents.is_some() {
+      row_node.parents = row_node_with_parents.unwrap().parents;
+    }
 
     // Fill the relationships in lower layers (parents)
     // ----------------------------------------
@@ -358,63 +350,45 @@ impl DbFetcher {
     //       )
     //     otherwise stop
 
-    let children: Vec<RoseTreeNode<PsqlTableRows>> = current_table
-      .referenced_fk_by_constraint_name
-      .iter()
-      .filter_map(|(_key, psql_foreign_key)| {
-        // println!(
-        //   "[OUTER] fetching referenced rows {:?} {:?} {:?}",
-        //   psql_foreign_key, row, &current_table.primary_column
-        // );
+    // Reset for current table bcs we're doing double fetch here
+    fetched_table_by_name.remove(&current_table.name);
+    let row_node_with_children = self.fetch_referenced_rows(
+      current_table.clone(),
+      DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      &mut fetched_table_by_name,
+    )?;
 
-        return self
-          .fetch_referenced_rows(
-            psql_foreign_key.clone(),
-            DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
-            &mut fetched_table_by_name,
-          )
-          .unwrap();
-      })
-      .collect();
-
-    row_node.children = RefCell::new(children);
+    if row_node_with_children.is_some() {
+      row_node.children = row_node_with_children.unwrap().children;
+    }
 
     return Ok(vec![row_node]);
   }
 
-  fn fetch_referencing_row(
+  fn fetch_referencing_rows(
     &mut self,
-    foreign_key: PsqlForeignKey,
+    table: PsqlTable,
     id: String,
     fetched_table_by_name: &mut HashMap<String, PsqlTable>,
   ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows>>> {
-    if fetched_table_by_name.contains_key(&foreign_key.foreign_table_name) {
+    if fetched_table_by_name.contains_key(&table.name) {
       return Ok(None);
     }
 
-    let current_table: PsqlTable = self
-      .psql_table_by_name
-      .get(&foreign_key.foreign_table_name)
-      .unwrap()
-      .clone();
+    fetched_table_by_name.insert(table.name.clone(), table.clone());
 
-    fetched_table_by_name.insert(current_table.name.clone(), current_table.clone());
-
-    println!(
-      "Creating initial node from table row {} {}",
-      current_table.name, id
-    );
+    println!("Creating initial node from table row {} {}", table.name, id);
 
     let mut row_node = self.create_initial_node_from_row(
-      foreign_key.foreign_table_schema,
-      foreign_key.foreign_table_name,
-      current_table.primary_column.name.clone(),
+      table.schema,
+      table.name.clone(),
+      table.primary_column.name.clone(),
       id,
     )?;
 
     println!(
       "[{}] Referencing rows contains {} rows",
-      current_table.name,
+      table.name.clone(),
       row_node.value.rows.len(),
     );
 
@@ -427,18 +401,18 @@ impl DbFetcher {
 
     println!(
       "[{}] Continue to fetch referencing rows {:?}",
-      current_table.name.clone(),
-      current_table.referencing_fk_by_constraint_name
+      table.name.clone(),
+      table.referencing_fk_by_constraint_name
     );
 
     // This method should be called from lower level, so we just need to go to upper level
-    let parents: Vec<RoseTreeNode<PsqlTableRows>> = current_table
+    let parents: Vec<RoseTreeNode<PsqlTableRows>> = table
       .referencing_fk_by_constraint_name
       .iter()
       .filter_map(|(_key, psql_foreign_key)| {
         return self
-          .fetch_referencing_row(
-            psql_foreign_key.clone(),
+          .fetch_referencing_rows(
+            self.psql_table_by_name[&psql_foreign_key.foreign_table_name].clone(),
             DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
             fetched_table_by_name,
           )
@@ -453,29 +427,25 @@ impl DbFetcher {
 
   fn fetch_referenced_rows(
     &mut self,
-    foreign_key: PsqlForeignKey,
+    table: PsqlTable,
     id: String,
     fetched_table_by_name: &mut HashMap<String, PsqlTable>,
   ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows>>> {
-    if fetched_table_by_name.contains_key(&foreign_key.foreign_table_name) {
+    if fetched_table_by_name.contains_key(&table.name) {
       return Ok(None);
     }
 
-    // println!("fetching referenced rows {:?} {:?}", foreign_key, id);
-    let table: PsqlTable = self
-      .psql_table_by_name
-      .get(&foreign_key.foreign_table_name)
-      .unwrap()
-      .clone();
-
     fetched_table_by_name.insert(table.name.clone(), table.clone());
 
-    println!("Creating initial node from table row {} {}", table.name, id);
+    println!(
+      "[{}] Creating initial node from table row {}",
+      table.name, id
+    );
 
     let mut row_node = self.create_initial_node_from_row(
       table.schema,
       table.name.clone(),
-      foreign_key.column.name,
+      table.primary_column.name.clone(),
       id,
     )?;
 
@@ -498,8 +468,8 @@ impl DbFetcher {
       .iter()
       .filter_map(|(_key, psql_foreign_key)| {
         return self
-          .fetch_referencing_row(
-            psql_foreign_key.clone(),
+          .fetch_referencing_rows(
+            self.psql_table_by_name[&psql_foreign_key.foreign_table_name].clone(),
             DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
             fetched_table_by_name,
           )
@@ -515,6 +485,8 @@ impl DbFetcher {
       table.referenced_fk_by_constraint_name
     );
 
+    let primary_column = table.primary_column.clone();
+
     // This method should be called from lower level, so we just need to go to upper level
     let children: Vec<RoseTreeNode<PsqlTableRows>> = table
       .referenced_fk_by_constraint_name
@@ -522,8 +494,8 @@ impl DbFetcher {
       .filter_map(|(_key, psql_foreign_key)| {
         return self
           .fetch_referenced_rows(
-            psql_foreign_key.clone(),
-            DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            self.psql_table_by_name[&psql_foreign_key.foreign_table_name].clone(),
+            DbFetcher::get_id_from_row(row.as_ref(), &primary_column),
             fetched_table_by_name,
           )
           .unwrap();
@@ -627,60 +599,6 @@ fn psql_table_map_from_foreign_key_info_rows(
         .collect();
     }
   }
-
-  // Create table and fill the referencing relations,
-  // we'll fill the reverse order referenced relations later on after we have
-  // all of the tables data.
-  // for row in rows.iter() {
-  //   let table = table_by_name.get_mut(&row.table_name);
-
-  //   if table.is_none() {
-  //     continue;
-  //   }
-
-  //   let mut table = table.unwrap();
-
-  //   // We can start filling referencing_fk data first
-  //   // because every row contains info of how a table references another table
-  //   let constraint_name: String = row.constraint_name.clone();
-
-  //   table.referencing_fk_by_constraint_name.insert(
-  //     constraint_name.clone(),
-  //     PsqlForeignKey {
-  //       name: constraint_name.clone(),
-  //       column: PsqlTableColumn {
-  //         name: row.column_name.clone(),
-  //         data_type: row.column_data_type.clone(),
-  //       },
-  //       foreign_table_schema: row.foreign_table_schema.clone(),
-  //       foreign_table_name: row.foreign_table_name.clone(),
-  //     },
-  //   );
-
-  //   table.referenced_fk_by_constraint_name =
-  //     fk_info_rows_by_foreign_table_name.get(&table.name).map_or(
-  //       Default::default(),
-  //       |fk_info_rows: &Vec<&ForeignKeyInformationRow>| -> HashMap<String, PsqlForeignKey> {
-  //         return fk_info_rows
-  //           .iter()
-  //           .map(|row| {
-  //             return (
-  //               row.constraint_name.clone(),
-  //               PsqlForeignKey {
-  //                 name: row.constraint_name.clone(),
-  //                 column: PsqlTableColumn {
-  //                   name: row.column_name.clone(),
-  //                   data_type: row.column_data_type.clone(),
-  //                 },
-  //                 foreign_table_schema: row.table_schema.clone(),
-  //                 foreign_table_name: row.table_name.clone(),
-  //               },
-  //             );
-  //           })
-  //           .collect();
-  //       },
-  //     );
-  // }
 }
 
 #[cfg(test)]
@@ -862,82 +780,3 @@ mod test {
     }
   }
 }
-
-// #[derive(Debug)]
-// struct AnyTypeToString<'a> {
-//   raw: &'a [u8],
-//   pub val: String,
-// }
-//
-// impl<'a> postgres::types::FromSql<'a> for AnyTypeToString<'a> {
-//   fn from_sql(
-//     ty: &postgres::types::Type,
-//     raw: &'a [u8],
-//   ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
-//     return postgres_protocol::types::text_from_sql(raw)
-//       .map(ToString::to_string)
-//       .map(|val| {
-//         return AnyTypeToString { val, raw };
-//       });
-//   }
-//
-//   fn accepts(ty: &types::Type) -> bool {
-//     return true;
-//   }
-// }
-//
-//
-// select * from order_items where order_id in(select tagged_model_id from tagged_models where tag_id in(92, 93));
-//
-//
-//
-
-// with table_with_fk as (
-//     SELECT
-//       tc.constraint_name,
-//       tc.table_schema,
-//       tc.table_name,
-//       kcu.column_name,
-//       c.data_type AS column_data_type,
-//       ccu.table_schema AS foreign_table_schema,
-//       ccu.table_name AS foreign_table_name,
-//       ccu.column_name AS foreign_column_name
-//     FROM
-//       information_schema.table_constraints AS tc
-//         JOIN information_schema.key_column_usage AS kcu
-//           ON tc.constraint_name = kcu.constraint_name
-//           AND tc.table_schema = kcu.table_schema
-//         JOIN information_schema.constraint_column_usage AS ccu
-//           ON ccu.constraint_name = tc.constraint_name
-//           AND ccu.table_schema = tc.table_schema
-//         JOIN information_schema.columns as c
-//           ON c.table_schema = tc.table_schema
-//           AND c.table_name = tc.table_name
-//           AND c.column_name = kcu.column_name
-//     WHERE tc.constraint_type = 'FOREIGN KEY'
-// )
-// select table_schema, table_name from information_schema.tables as t
-//   where
-//     t.table_name not in (select table_name from table_with_fk) and
-//     t.table_schema not in('pg_catalog', 'information_schema');
-
-// with table_with_fk as (
-//      SELECT
-//        tc.constraint_name,
-//        tc.table_schema,
-//        tc.table_name,
-//        kcu.column_name as primary_column_name,
-//        c.data_type AS primary_column_data_type
-//      FROM
-//        information_schema.table_constraints AS tc
-//          JOIN information_schema.key_column_usage AS kcu
-//            ON tc.constraint_name = kcu.constraint_name
-//            AND tc.table_schema = kcu.table_schema
-//          JOIN information_schema.columns as c
-//            ON c.table_schema = tc.table_schema
-//            AND c.table_name = tc.table_name
-//            AND c.column_name = kcu.column_name
-//      WHERE tc.constraint_type = 'PRIMARY KEY' and
-//       tc.table_schema not in ('pg_catalog', 'information_schema')
-//  )
-//
