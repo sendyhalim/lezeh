@@ -5,7 +5,6 @@ use std::process::Stdio;
 use crate::common::types::ResultAnyError;
 use crate::common::utils;
 use anyhow::anyhow;
-use anyhow::Error;
 
 /// A command that has some presets such as:
 /// - Working directory
