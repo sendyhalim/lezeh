@@ -58,18 +58,19 @@ async fn main() -> ResultAnyError<()> {
     .unwrap();
 
     let psql_table_by_name = psql.load_table_structure(Option::None).unwrap();
-    let mut db_fetcher = psql::DbFetcher {
-      psql_table_by_name,
-      psql,
-    };
+
+    let mut db_fetcher = psql::DbFetcher { psql };
 
     let trees = db_fetcher
-      .fetch_rose_trees_to_be_inserted(&psql::FetchRowInput {
-        schema: Some("public".to_owned()),
-        table_name: "orders".to_owned(),
-        column_name: "id".to_owned(),
-        column_value: "1250".to_owned(),
-      })
+      .fetch_rose_trees_to_be_inserted(
+        &psql::FetchRowInput {
+          schema: Some("public"),
+          table_name: "orders",
+          column_name: "id",
+          column_value: "1250",
+        },
+        &psql_table_by_name,
+      )
       .unwrap();
 
     let mut tree: &RoseTreeNode<PsqlTableRows> = trees.get(0).unwrap();
