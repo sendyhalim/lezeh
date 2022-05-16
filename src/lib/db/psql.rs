@@ -8,36 +8,93 @@ use itertools::Itertools;
 use postgres::config::Config as PsqlConfig;
 use postgres::Client as PsqlClient;
 use postgres::Row;
+use std::borrow::Cow;
 
 use crate::common::types::ResultAnyError;
-type TableName = String;
+
+type AnyString<'a> = Cow<'a, str>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub struct PsqlTableColumn {
-  pub name: String,
-  pub data_type: String,
+pub struct PsqlTableColumn<'a> {
+  pub name: AnyString<'a>,
+  pub data_type: AnyString<'a>,
 }
+
+impl<'a> PsqlTableColumn<'a> {
+  pub fn new<S>(name: S, data_type: S) -> PsqlTableColumn<'a>
+  where
+    S: Into<AnyString<'a>>,
+  {
+    return PsqlTableColumn {
+      name: name.into(),
+      data_type: data_type.into(),
+    };
+  }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub struct PsqlForeignKey {
-  pub name: String,
-  pub column: PsqlTableColumn,
-  pub foreign_table_schema: String,
-  pub foreign_table_name: String,
+pub struct PsqlForeignKey<'a> {
+  pub name: AnyString<'a>,
+  pub column: PsqlTableColumn<'a>,
+  pub foreign_table_schema: AnyString<'a>,
+  pub foreign_table_name: AnyString<'a>,
+}
+
+impl<'a> PsqlForeignKey<'a> {
+  fn new<S>(
+    name: S,
+    column: PsqlTableColumn<'a>,
+    foreign_table_schema: S,
+    foreign_table_name: S,
+  ) -> PsqlForeignKey<'a>
+  where
+    S: Into<AnyString<'a>>,
+  {
+    return PsqlForeignKey {
+      name: name.into(),
+      column: column,
+      foreign_table_schema: foreign_table_schema.into(),
+      foreign_table_name: foreign_table_name.into(),
+    };
+  }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTable {
-  pub schema: String,
-  pub name: TableName,
-  pub primary_column: PsqlTableColumn,
-  pub columns: BTreeSet<PsqlTableColumn>,
-  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
-  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+pub struct PsqlTable<'a> {
+  pub schema: AnyString<'a>,
+  pub name: AnyString<'a>,
+  pub primary_column: PsqlTableColumn<'a>,
+  pub columns: BTreeSet<PsqlTableColumn<'a>>,
+  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
+  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
+}
+
+impl<'a> PsqlTable<'a> {
+  fn new<S>(
+    schema: S,
+    name: S,
+    primary_column: PsqlTableColumn<'a>,
+    columns: BTreeSet<PsqlTableColumn<'a>>,
+    referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
+    referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
+  ) -> PsqlTable<'a>
+  where
+    S: Into<AnyString<'a>>,
+  {
+    return PsqlTable {
+      schema: schema.into(),
+      name: name.into(),
+      primary_column,
+      columns,
+      referenced_fk_by_constraint_name,
+      referencing_fk_by_constraint_name,
+    };
+  }
 }
 
 #[derive(Debug, Clone)]
-pub struct PsqlTableRows {
-  pub table: PsqlTable,
+pub struct PsqlTableRows<'a> {
+  pub table: PsqlTable<'a>,
   pub rows: Vec<Rc<Row>>,
 }
 
@@ -159,20 +216,20 @@ impl Psql {
     return Ok(fk_info_rows);
   }
 
-  pub fn load_table_structure(
-    &mut self,
+  pub fn load_table_structure<'a, 'b>(
+    &'a mut self,
     schema: Option<String>,
-  ) -> ResultAnyError<HashMap<String, PsqlTable>> {
+  ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
     let fk_info_rows = self.fetch_fk_info(schema)?;
 
-    let mut table_by_name: HashMap<String, PsqlTable> = self.get_table_by_name()?;
+    let mut table_by_name = self.get_table_by_name()?;
 
     psql_table_map_from_foreign_key_info_rows(&mut table_by_name, &fk_info_rows);
 
     return Ok(table_by_name);
   }
 
-  pub fn get_table_by_name(&mut self) -> ResultAnyError<HashMap<String, PsqlTable>> {
+  pub fn get_table_by_name<'a, 'b>(&'a mut self) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
     let rows: Vec<Row> = self.client.query(
       "
       SELECT
@@ -199,19 +256,19 @@ impl Psql {
     let psql_table_by_name: HashMap<String, PsqlTable> = rows
       .into_iter()
       .map(|row| {
-        let psql_table = PsqlTable {
-          schema: row.get("table_schema"),
-          name: row.get("table_name"),
-          columns: Default::default(),
-          primary_column: PsqlTableColumn {
-            name: row.get("primary_column_name"),
-            data_type: row.get("primary_column_data_type"),
-          },
-          referenced_fk_by_constraint_name: Default::default(),
-          referencing_fk_by_constraint_name: Default::default(),
-        };
+        let psql_table = PsqlTable::new(
+          row.get::<_, String>("table_schema"),
+          row.get::<_, String>("table_name"),
+          PsqlTableColumn::new(
+            row.get::<_, String>("primary_column_name"),
+            row.get::<_, String>("primary_column_data_type"),
+          ),
+          Default::default(),
+          Default::default(),
+          Default::default(),
+        );
 
-        return (psql_table.name.clone(), psql_table);
+        return (psql_table.name.to_string(), psql_table);
       })
       .collect();
 
@@ -220,15 +277,14 @@ impl Psql {
 }
 
 pub struct DbFetcher {
-  pub psql_table_by_name: HashMap<TableName, PsqlTable>,
   pub psql: Psql,
 }
 
-pub struct FetchRowInput {
-  pub schema: Option<String>,
-  pub table_name: String,
-  pub column_name: String,
-  pub column_value: String,
+pub struct FetchRowInput<'a> {
+  pub schema: Option<&'a str>,
+  pub table_name: &'a str,
+  pub column_name: &'a str,
+  pub column_value: &'a str,
 }
 
 impl DbFetcher {
@@ -268,17 +324,18 @@ impl DbFetcher {
 
   fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> String {
     if id_column_spec.data_type == "integer" {
-      return format!("{}", row.get::<'_, _, i32>(id_column_spec.name.as_str()));
+      return format!("{}", row.get::<_, i32>(id_column_spec.name.as_ref()));
     }
 
-    return row.get::<'_, _, String>(id_column_spec.name.as_str());
+    return row.get::<_, String>(id_column_spec.name.as_ref());
   }
 
-  pub fn fetch_rose_trees_to_be_inserted(
+  pub fn fetch_rose_trees_to_be_inserted<'a>(
     &mut self,
-    input: &FetchRowInput,
-  ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRows>>> {
-    let psql_table = self.psql_table_by_name.get(&input.table_name);
+    input: &'a FetchRowInput,
+    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
+  ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRows<'a>>>> {
+    let psql_table = psql_table_by_name.get(&input.table_name.to_string());
 
     if psql_table.is_none() {
       return Ok(vec![]);
@@ -297,9 +354,9 @@ impl DbFetcher {
 
     // We just fetched it, let's just assume naively that the table
     // will still exist right after we fetch it.
-    let current_table: PsqlTable = self
-      .psql_table_by_name
-      .get(&input.table_name)
+    let current_table: PsqlTable = psql_table_by_name
+      .get(&input.table_name.to_string())
+      .ok_or_else(|| format!("Could not get table {}", input.table_name))
       .unwrap()
       .clone();
 
@@ -319,16 +376,20 @@ impl DbFetcher {
     //       register the current table as root table
     //       fetch the current row by
     //          select * from {input.table_name} where id = {input.id}
-    let mut row_node: RoseTreeNode<PsqlTableRows> = RoseTreeNode::new(PsqlTableRows {
+
+    let psql_table_rows: PsqlTableRows = PsqlTableRows {
       table: current_table.clone(),
       rows: vec![row.clone()],
-    });
+    };
+
+    let mut row_node: RoseTreeNode<PsqlTableRows<'a>> = RoseTreeNode::new(psql_table_rows);
 
     let mut fetched_table_by_name: HashMap<String, PsqlTable> = Default::default();
 
     let row_node_with_parents = self.fetch_referencing_rows(
       current_table.clone(),
-      DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      &DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      psql_table_by_name,
       &mut fetched_table_by_name,
     )?;
 
@@ -351,10 +412,12 @@ impl DbFetcher {
     //     otherwise stop
 
     // Reset for current table bcs we're doing double fetch here
-    fetched_table_by_name.remove(&current_table.name);
+    fetched_table_by_name.remove(&current_table.name.to_string());
+
     let row_node_with_children = self.fetch_referenced_rows(
       current_table.clone(),
-      DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      &DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      psql_table_by_name,
       &mut fetched_table_by_name,
     )?;
 
@@ -365,26 +428,22 @@ impl DbFetcher {
     return Ok(vec![row_node]);
   }
 
-  fn fetch_referencing_rows(
+  fn fetch_referencing_rows<'a>(
     &mut self,
-    table: PsqlTable,
-    id: String,
-    fetched_table_by_name: &mut HashMap<String, PsqlTable>,
-  ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows>>> {
-    if fetched_table_by_name.contains_key(&table.name) {
+    table: PsqlTable<'a>,
+    id: &str,
+    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
+    fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
+  ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows<'a>>>> {
+    if fetched_table_by_name.contains_key(&table.name.to_string()) {
       return Ok(None);
     }
 
-    fetched_table_by_name.insert(table.name.clone(), table.clone());
+    fetched_table_by_name.insert(table.name.to_string(), table.clone());
 
     println!("Creating initial node from table row {} {}", table.name, id);
 
-    let mut row_node = self.create_initial_node_from_row(
-      table.schema,
-      table.name.clone(),
-      table.primary_column.name.clone(),
-      id,
-    )?;
+    let mut row_node = self.create_initial_node_from_row(table.clone(), id)?;
 
     println!(
       "[{}] Referencing rows contains {} rows",
@@ -412,11 +471,12 @@ impl DbFetcher {
       .filter_map(|(_key, psql_foreign_key)| {
         return self
           .fetch_referencing_rows(
-            self.psql_table_by_name[&psql_foreign_key.foreign_table_name].clone(),
-            DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            &DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            psql_table_by_name,
             fetched_table_by_name,
           )
-          .unwrap();
+          .unwrap(); // TODO handle gracefully, convert Vec<Result<E, T>> to Result<Vec<T>, E>
       })
       .collect();
 
@@ -425,29 +485,25 @@ impl DbFetcher {
     return Ok(Some(row_node));
   }
 
-  fn fetch_referenced_rows(
+  fn fetch_referenced_rows<'a>(
     &mut self,
-    table: PsqlTable,
-    id: String,
-    fetched_table_by_name: &mut HashMap<String, PsqlTable>,
-  ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows>>> {
-    if fetched_table_by_name.contains_key(&table.name) {
+    table: PsqlTable<'a>,
+    id: &str,
+    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
+    fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
+  ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows<'a>>>> {
+    if fetched_table_by_name.contains_key(&table.name.to_string()) {
       return Ok(None);
     }
 
-    fetched_table_by_name.insert(table.name.clone(), table.clone());
+    fetched_table_by_name.insert(table.name.to_string(), table.clone());
 
     println!(
       "[{}] Creating initial node from table row {}",
       table.name, id
     );
 
-    let mut row_node = self.create_initial_node_from_row(
-      table.schema,
-      table.name.clone(),
-      table.primary_column.name.clone(),
-      id,
-    )?;
+    let mut row_node = self.create_initial_node_from_row(table.clone(), id)?;
 
     if row_node.value.rows.is_empty() {
       return Ok(None);
@@ -469,8 +525,9 @@ impl DbFetcher {
       .filter_map(|(_key, psql_foreign_key)| {
         return self
           .fetch_referencing_rows(
-            self.psql_table_by_name[&psql_foreign_key.foreign_table_name].clone(),
-            DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            &DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            psql_table_by_name,
             fetched_table_by_name,
           )
           .unwrap();
@@ -494,8 +551,9 @@ impl DbFetcher {
       .filter_map(|(_key, psql_foreign_key)| {
         return self
           .fetch_referenced_rows(
-            self.psql_table_by_name[&psql_foreign_key.foreign_table_name].clone(),
-            DbFetcher::get_id_from_row(row.as_ref(), &primary_column),
+            psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            &DbFetcher::get_id_from_row(row, &primary_column),
+            psql_table_by_name,
             fetched_table_by_name,
           )
           .unwrap();
@@ -507,23 +565,15 @@ impl DbFetcher {
     return Ok(Some(row_node));
   }
 
-  fn create_initial_node_from_row(
+  fn create_initial_node_from_row<'a>(
     &mut self,
-    schema: String,
-    table_name: String,
-    id_column_name: String,
-    id: String,
-  ) -> ResultAnyError<RoseTreeNode<PsqlTableRows>> {
-    let table: PsqlTable = self
-      .psql_table_by_name
-      .get(&table_name)
-      .ok_or_else(|| anyhow!("Could not find table {}", table_name))?
-      .clone();
-
+    table: PsqlTable<'a>,
+    id: &str,
+  ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     let rows = self.find_rows(&FetchRowInput {
-      schema: Some(schema),
-      table_name,
-      column_name: id_column_name.clone(),
+      schema: Some(table.schema.as_ref()),
+      table_name: table.name.as_ref(),
+      column_name: table.primary_column.name.as_ref(),
       column_value: id,
     })?;
 
@@ -551,7 +601,7 @@ fn psql_table_map_from_foreign_key_info_rows(
     });
 
   for (table_name, table) in table_by_name.into_iter() {
-    let referencing_fk_rows = fk_info_rows_by_table_name.get(table_name);
+    let referencing_fk_rows = fk_info_rows_by_table_name.get(&table_name.to_string());
 
     if referencing_fk_rows.is_some() {
       let referencing_fk_rows = referencing_fk_rows.unwrap();
@@ -561,21 +611,18 @@ fn psql_table_map_from_foreign_key_info_rows(
         .map(|fk_row| {
           return (
             fk_row.constraint_name.clone(),
-            PsqlForeignKey {
-              name: fk_row.constraint_name.clone(),
-              column: PsqlTableColumn {
-                name: fk_row.column_name.clone(),
-                data_type: fk_row.column_data_type.clone(),
-              },
-              foreign_table_schema: fk_row.foreign_table_schema.clone(),
-              foreign_table_name: fk_row.foreign_table_name.clone(),
-            },
+            PsqlForeignKey::new(
+              fk_row.constraint_name.clone(),
+              PsqlTableColumn::new(fk_row.column_name.clone(), fk_row.column_data_type.clone()),
+              fk_row.foreign_table_schema.clone(),
+              fk_row.foreign_table_name.clone(),
+            ),
           );
         })
         .collect();
     }
 
-    let referenced_fk_rows = fk_info_rows_by_foreign_table_name.get(table_name);
+    let referenced_fk_rows = fk_info_rows_by_foreign_table_name.get(&table_name.to_string());
 
     if referenced_fk_rows.is_some() {
       let referenced_fk_rows = referenced_fk_rows.unwrap();
@@ -585,15 +632,12 @@ fn psql_table_map_from_foreign_key_info_rows(
         .map(|fk_row| {
           return (
             fk_row.constraint_name.clone(),
-            PsqlForeignKey {
-              name: fk_row.constraint_name.clone(),
-              column: PsqlTableColumn {
-                name: fk_row.column_name.clone(),
-                data_type: fk_row.column_data_type.clone(),
-              },
-              foreign_table_schema: fk_row.table_schema.clone(),
-              foreign_table_name: fk_row.table_name.clone(),
-            },
+            PsqlForeignKey::new(
+              fk_row.constraint_name.clone(),
+              PsqlTableColumn::new(fk_row.column_name.clone(), fk_row.column_data_type.clone()),
+              fk_row.table_schema.clone(),
+              fk_row.table_name.clone(),
+            ),
           );
         })
         .collect();
@@ -603,8 +647,28 @@ fn psql_table_map_from_foreign_key_info_rows(
 
 #[cfg(test)]
 mod test {
+  use super::*;
+
+  impl<'a> PsqlTable<'a> {
+    fn basic<S>(schema: S, name: S, primary_column: PsqlTableColumn<'a>) -> PsqlTable
+    where
+      S: Into<Cow<'a, str>>,
+    {
+      return PsqlTable {
+        schema: schema.into(),
+        name: name.into(),
+        primary_column,
+        columns: Default::default(),
+        referenced_fk_by_constraint_name: Default::default(),
+        referencing_fk_by_constraint_name: Default::default(),
+      };
+    }
+  }
+
   mod psql_tables_from_foreign_key_info_rows {
     use super::super::*;
+    use crate::common::macros::hashmap_literal;
+    use crate::common::string::s;
 
     #[test]
     fn it_should_load_rows() {
@@ -674,7 +738,7 @@ mod test {
           foreign_table_schema: "public".into(),
           foreign_table_name: "store_staff_roles".into(),
           foreign_column_name: "id".into(),
-          foreign_column_data_type: "integer".into(),
+          foreign_column_data_type: "uuid".into(),
         },
         ForeignKeyInformationRow {
           table_schema: "public".into(),
@@ -733,16 +797,60 @@ mod test {
         },
       ];
 
-      let mut psql_tables: HashMap<TableName, PsqlTable> = HashMap::new();
+      let mut psql_table_by_name: HashMap<String, PsqlTable> = hashmap_literal! {
+        s("stores") => PsqlTable::basic("public", "stores", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("orders") => PsqlTable::basic("public", "orders", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("order_items") => PsqlTable::basic("public", "order_items", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("order_statuses") => PsqlTable::basic("public", "order_statuses", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("products") => PsqlTable::basic("public", "products", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("product_images") => PsqlTable::basic("public", "product_images", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("product_stock_ledgers") => PsqlTable::basic("public", "product_stock_ledgers", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("store_customers") => PsqlTable::basic("public", "store_customers", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+        s("store_staffs_stores") => PsqlTable::basic("public", "store_staffs_stores", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "uuid".into(),
+        }),
+        s("store_staff_roles") => PsqlTable::basic("public", "store_staff_roles", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "uuid".into(),
+        }),
+        s("store_staffs") => PsqlTable::basic("public", "store_staffs", PsqlTableColumn{
+          name: "id".into(),
+          data_type: "integer".into(),
+        }),
+      };
 
       // TODO: Need to prefil psql tables
-
-      psql_table_map_from_foreign_key_info_rows(&mut psql_tables, &fk_info_rows);
+      psql_table_map_from_foreign_key_info_rows(&mut psql_table_by_name, &fk_info_rows);
 
       // Make sure relations are set correctly
       // -------------------------------------------
       // table: order_items
-      let order_items_table: &PsqlTable = psql_tables.get("order_items").unwrap();
+      let order_items_table: &PsqlTable = psql_table_by_name.get("order_items").unwrap();
 
       assert_eq!(order_items_table.name, "order_items");
       assert_eq!(order_items_table.referencing_fk_by_constraint_name.len(), 2);
@@ -755,7 +863,10 @@ mod test {
       assert!(fk_to_orders_table_from_order_items.is_some());
 
       // table: store_staffs_stores
-      let store_staffs_stores_table: &PsqlTable = psql_tables.get("store_staffs_stores").unwrap();
+      let store_staffs_stores_table: &PsqlTable = psql_table_by_name
+        .get("store_staffs_stores")
+        .ok_or_else(|| "could not get store_staffs_stores")
+        .unwrap();
       assert_eq!(store_staffs_stores_table.name, "store_staffs_stores");
       assert_eq!(
         store_staffs_stores_table
@@ -765,7 +876,7 @@ mod test {
       );
 
       // table: store_staffs_stores
-      let products_table: &PsqlTable = psql_tables.get("products").unwrap();
+      let products_table: &PsqlTable = psql_table_by_name.get("products").unwrap();
       assert_eq!(products_table.name, "products");
       assert_eq!(products_table.referencing_fk_by_constraint_name.len(), 1);
       assert_eq!(products_table.referenced_fk_by_constraint_name.len(), 3);
@@ -776,7 +887,7 @@ mod test {
       let available_tables: BTreeSet<&String> =
         fk_info_rows.iter().map(|row| &row.table_name).collect();
 
-      assert_eq!(psql_tables.len(), available_tables.len())
+      assert_eq!(psql_table_by_name.len(), 11)
     }
   }
 }
