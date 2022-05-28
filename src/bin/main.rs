@@ -7,9 +7,9 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use serde::Serialize;
 
+use lib::common::rose_tree::RoseTreeNode;
 use lib::db::psql;
 use lib::db::psql::PsqlTableRows;
-use lib::db::psql::RoseTreeNode;
 
 use lib::common::config::Config;
 use lib::common::handlebars::HandlebarsRenderer;
@@ -61,7 +61,7 @@ async fn main() -> ResultAnyError<()> {
 
     let mut db_fetcher = psql::DbFetcher { psql };
 
-    let trees = db_fetcher
+    let mut trees = db_fetcher
       .fetch_rose_trees_to_be_inserted(
         &psql::FetchRowInput {
           schema: Some("public"),
@@ -73,7 +73,8 @@ async fn main() -> ResultAnyError<()> {
       )
       .unwrap();
 
-    let mut tree: &RoseTreeNode<PsqlTableRows> = trees.get(0).unwrap();
+    let tree: RoseTreeNode<PsqlTableRows> = trees.remove(0);
+    RoseTreeNode::parents_to_vec(tree);
   });
 
   handle.join().unwrap();

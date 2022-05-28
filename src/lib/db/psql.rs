@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -8,8 +9,8 @@ use itertools::Itertools;
 use postgres::config::Config as PsqlConfig;
 use postgres::Client as PsqlClient;
 use postgres::Row;
-use std::borrow::Cow;
 
+use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 
 type AnyString<'a> = Cow<'a, str>;
@@ -98,21 +99,9 @@ pub struct PsqlTableRows<'a> {
   pub rows: Vec<Rc<Row>>,
 }
 
-/// RoseTreeNode can start from multiple roots
-#[derive(Debug, Clone)]
-pub struct RoseTreeNode<T> {
-  pub parents: RefCell<Vec<RoseTreeNode<T>>>,
-  pub children: RefCell<Vec<RoseTreeNode<T>>>,
-  pub value: T,
-}
-
-impl<T> RoseTreeNode<T> {
-  fn new(value: T) -> RoseTreeNode<T> {
-    return RoseTreeNode {
-      parents: Default::default(),
-      children: Default::default(),
-      value,
-    };
+impl<'a> PartialEq for PsqlTableRows<'a> {
+  fn eq(&self, other: &Self) -> bool {
+    return self.table == other.table;
   }
 }
 
@@ -416,6 +405,7 @@ impl DbFetcher {
 
     let row_node_with_children = self.fetch_referenced_rows(
       current_table.clone(),
+      &current_table.primary_column,
       &DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
       psql_table_by_name,
       &mut fetched_table_by_name,
@@ -443,13 +433,8 @@ impl DbFetcher {
 
     println!("Creating initial node from table row {} {}", table.name, id);
 
-    let mut row_node = self.create_initial_node_from_row(table.clone(), id)?;
-
-    println!(
-      "[{}] Referencing rows contains {} rows",
-      table.name.clone(),
-      row_node.value.rows.len(),
-    );
+    let mut row_node =
+      self.create_initial_node_from_row(table.clone(), &table.primary_column.name, id)?;
 
     if row_node.value.rows.is_empty() {
       return Ok(None);
@@ -457,12 +442,6 @@ impl DbFetcher {
 
     // We  know we'll always have that 1 row
     let row = row_node.value.rows.get(0).unwrap();
-
-    println!(
-      "[{}] Continue to fetch referencing rows {:?}",
-      table.name.clone(),
-      table.referencing_fk_by_constraint_name
-    );
 
     // This method should be called from lower level, so we just need to go to upper level
     let parents: Vec<RoseTreeNode<PsqlTableRows>> = table
@@ -488,6 +467,7 @@ impl DbFetcher {
   fn fetch_referenced_rows<'a>(
     &mut self,
     table: PsqlTable<'a>,
+    fk_column: &PsqlTableColumn,
     id: &str,
     psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
     fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
@@ -503,7 +483,7 @@ impl DbFetcher {
       table.name, id
     );
 
-    let mut row_node = self.create_initial_node_from_row(table.clone(), id)?;
+    let mut row_node = self.create_initial_node_from_row(table.clone(), &fk_column.name, id)?;
 
     if row_node.value.rows.is_empty() {
       return Ok(None);
@@ -511,12 +491,6 @@ impl DbFetcher {
 
     // We  know we'll always have that 1 row
     let row = row_node.value.rows.get(0).unwrap();
-
-    println!(
-      "[{}] Continue to fetch parent rows {:?}",
-      table.name.clone(),
-      table.referencing_fk_by_constraint_name
-    );
 
     // This method should be called from lower level, so we just need to go to upper level
     let parents: Vec<RoseTreeNode<PsqlTableRows>> = table
@@ -536,15 +510,8 @@ impl DbFetcher {
 
     row_node.parents = RefCell::new(parents);
 
-    println!(
-      "[{}] Continue to fetch child rows {:?}",
-      table.name.clone(),
-      table.referenced_fk_by_constraint_name
-    );
-
     let primary_column = table.primary_column.clone();
 
-    // This method should be called from lower level, so we just need to go to upper level
     let children: Vec<RoseTreeNode<PsqlTableRows>> = table
       .referenced_fk_by_constraint_name
       .iter()
@@ -552,6 +519,7 @@ impl DbFetcher {
         return self
           .fetch_referenced_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            &psql_foreign_key.column,
             &DbFetcher::get_id_from_row(row, &primary_column),
             psql_table_by_name,
             fetched_table_by_name,
@@ -568,12 +536,13 @@ impl DbFetcher {
   fn create_initial_node_from_row<'a>(
     &mut self,
     table: PsqlTable<'a>,
+    column_name: &str,
     id: &str,
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     let rows = self.find_rows(&FetchRowInput {
       schema: Some(table.schema.as_ref()),
       table_name: table.name.as_ref(),
-      column_name: table.primary_column.name.as_ref(),
+      column_name,
       column_value: id,
     })?;
 
