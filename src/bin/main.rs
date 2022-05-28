@@ -74,7 +74,7 @@ async fn main() -> ResultAnyError<()> {
       .unwrap();
 
     let tree: RoseTreeNode<PsqlTableRows> = trees.remove(0);
-    RoseTreeNode::parents_to_vec(tree);
+    RoseTreeNode::parents_by_level(tree);
   });
 
   handle.join().unwrap();
