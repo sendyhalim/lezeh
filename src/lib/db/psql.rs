@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -459,7 +458,7 @@ impl DbFetcher {
       })
       .collect();
 
-    row_node.parents = RefCell::new(parents);
+    row_node.set_parents(parents);
 
     return Ok(Some(row_node));
   }
@@ -490,9 +489,9 @@ impl DbFetcher {
     }
 
     // We  know we'll always have that 1 row
-    let row = row_node.value.rows.get(0).unwrap();
+    let row = &row_node.value.rows.get(0).unwrap().clone();
 
-    // This method should be called from lower level, so we just need to go to upper level
+    // This method should be called from oower level, so we just need to go to upper level
     let parents: Vec<RoseTreeNode<PsqlTableRows>> = table
       .referencing_fk_by_constraint_name
       .iter()
@@ -500,7 +499,7 @@ impl DbFetcher {
         return self
           .fetch_referencing_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
-            &DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            &DbFetcher::get_id_from_row(row, &psql_foreign_key.column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -508,7 +507,7 @@ impl DbFetcher {
       })
       .collect();
 
-    row_node.parents = RefCell::new(parents);
+    row_node.set_parents(parents);
 
     let primary_column = table.primary_column.clone();
 
@@ -528,7 +527,7 @@ impl DbFetcher {
       })
       .collect();
 
-    row_node.children = RefCell::new(children);
+    row_node.set_children(children);
 
     return Ok(Some(row_node));
   }
