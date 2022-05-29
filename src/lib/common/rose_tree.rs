@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
@@ -7,14 +6,24 @@ use crate::common::macros::hashmap_literal;
 /// RoseTreeNode can start from multiple roots
 #[derive(Debug, Clone)]
 pub struct RoseTreeNode<T> {
-  pub parents: RefCell<Vec<RoseTreeNode<T>>>,
-  pub children: RefCell<Vec<RoseTreeNode<T>>>,
+  pub parents: Vec<RoseTreeNode<T>>,
+  pub children: Vec<RoseTreeNode<T>>,
   pub value: T,
+}
+
+impl<T> RoseTreeNode<T> {
+  pub fn set_parents(&mut self, parents: Vec<RoseTreeNode<T>>) {
+    self.parents = parents;
+  }
+
+  pub fn set_children(&mut self, children: Vec<RoseTreeNode<T>>) {
+    self.children = children;
+  }
 }
 
 impl<T> PartialEq for RoseTreeNode<T>
 where
-  T: Clone + Eq,
+  T: Eq,
 {
   fn eq(&self, other: &Self) -> bool {
     return self.value == other.value
@@ -36,30 +45,37 @@ impl<T> RoseTreeNode<T> {
   pub fn parents_by_level(rose_tree: RoseTreeNode<T>) -> HashMap<i32, Vec<RoseTreeNode<T>>> {
     let mut level: i32 = 0;
 
-    // Find roots by going up
-
-    if rose_tree.parents.borrow().is_empty() {
+    if rose_tree.parents.is_empty() {
       // Do nothing
     }
 
-    let mut deque: VecDeque<(i32, Vec<RoseTreeNode<T>>)> = Default::default();
+    let mut ps_by_level: HashMap<i32, Vec<RoseTreeNode<T>>> = Default::default();
     let mut deque_temp: VecDeque<RoseTreeNode<T>> = Default::default();
-    deque_temp.extend(rose_tree.parents.into_inner());
+
+    deque_temp.extend(rose_tree.parents);
 
     while !deque_temp.is_empty() {
       level = level - 1;
       // Drain first the temp into a vec
-      deque.push_front((level, deque_temp.drain(..).collect()));
+      let temp: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
 
       // Now get all the parents for all nodes at the current level
-      for node in deque.front().unwrap().1.iter() {
-        for parent in node.parents.take().into_iter() {
+      for mut node in temp.into_iter() {
+        // Move parents to vec, this will replace node.parents with empty vec which is
+        // expected bcs we don't care of node <-> parents relations after this
+        let parents: Vec<RoseTreeNode<T>> = node.parents.drain(..).collect();
+
+        for parent in parents.into_iter() {
           deque_temp.push_back(parent);
         }
+
+        let entry: &mut Vec<_> = ps_by_level.entry(level).or_insert(Default::default());
+
+        entry.push(node);
       }
     }
 
-    return deque.into_iter().collect::<HashMap<_, _>>();
+    return ps_by_level;
   }
 
   pub fn rose_tree_to_vec(rose_tree: RoseTreeNode<T>) {
@@ -68,8 +84,8 @@ impl<T> RoseTreeNode<T> {
 
   // pub fn children_to_vec(
   //   node: RoseTreeNode<T>,
-  //   parents_vec: Vec<(i32, Vec<RoseTreeNode<T>>)>,
-  // ) -> Vec<(i32, Vec<RoseTreeNode<T>>)> {
+  //   parents_by_level: HashMap<i32, Vec<RoseTreeNode<T>>>,
+  // ) -> HashMap<i32, Vec<RoseTreeNode<T>>> {
   //   // Find roots by going up
 
   //   if node.children.borrow().is_empty() {
@@ -98,14 +114,10 @@ impl<T> RoseTreeNode<T> {
 
   //     for node in deque.back().unwrap().iter() {
   //       for child in node.children.take().into_iter() {
-  //         let parents_from_current_child = RoseTreeNode::parents_to_vec(node);
+  //         let parents_by_level = RoseTreeNode::parents_by_level(node.clone().to_owned());
   //         parents.extend(parents_from_current_child);
   //         deque_temp.push_front(child);
   //       }
-  //     }
-
-  //     for p in parents.into_iter() {
-  //       deque.push_front(p);
   //     }
   //   }
 
@@ -140,10 +152,10 @@ mod test {
       let mut parent_a = RoseTreeNode::new("level_1_parent_a");
       let mut parent_b = RoseTreeNode::new("level_1_parent_b");
 
-      parent_a.parents = RefCell::from(vec![RoseTreeNode::new("level_2_parent_a")]);
-      parent_b.children = RefCell::from(vec![RoseTreeNode::new("level_1_child_b")]);
+      parent_a.set_parents(vec![RoseTreeNode::new("level_2_parent_a")]);
+      parent_b.set_children(vec![RoseTreeNode::new("level_1_child_b")]);
 
-      node.parents = RefCell::from(vec![parent_a, parent_b.clone()]);
+      node.set_parents(vec![parent_a, parent_b.clone()]);
 
       let parents_vec = RoseTreeNode::parents_by_level(node);
 
