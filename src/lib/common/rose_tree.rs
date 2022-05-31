@@ -111,39 +111,32 @@ where
       level = level + 1;
 
       // Drain first the temp into a vec
-      let temp: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
+      let children: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
 
-      // Now get all the parents for all nodes at the current level
-      for mut node in temp.into_iter() {
-        // Move parents to vec, this will replace node.parents with empty vec which is
-        // expected bcs we don't care of node <-> parents relations after this
-        let children: Vec<RoseTreeNode<T>> = node.children.drain(..).collect();
+      for mut child in children.into_iter() {
+        let parents_by_level_from_current_child: HashMap<i32, Vec<RoseTreeNode<T>>> =
+          RoseTreeNode::parents_by_level(child.clone());
 
-        for mut child in children.into_iter() {
-          let parents_by_level_from_current_child: HashMap<i32, Vec<RoseTreeNode<T>>> =
-            RoseTreeNode::parents_by_level(child.clone());
+        // Drain parents, we already put it in parents_by_level_from_current_child
+        child.parents = vec![];
 
-          // Drain parents, we already put it in parents_by_level_from_current_child
-          child.parents = vec![];
+        println!(
+          "[{:#?}]Constructing parents {:#?}",
+          child, parents_by_level_from_current_child
+        );
 
-          println!(
-            "[{:#?}]Constructing parents {:#?}",
-            child, parents_by_level_from_current_child
-          );
-
-          for (parent_level, parents) in parents_by_level_from_current_child.into_iter() {
-            parents_by_level
-              .entry((level + 1) - parent_level.abs())
-              .or_insert(Default::default())
-              .extend(parents);
-          }
-
-          deque_temp.push_back(child);
+        for (parent_level, parents) in parents_by_level_from_current_child.into_iter() {
+          parents_by_level
+            .entry((level + 1) - parent_level.abs())
+            .or_insert(Default::default())
+            .extend(parents);
         }
+
+        deque_temp.extend(child.children.drain(..));
 
         let entry: &mut Vec<_> = children_by_level.entry(level).or_insert(Default::default());
 
-        entry.push(node);
+        entry.push(child);
       }
     }
 
