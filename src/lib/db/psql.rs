@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::rc::Rc;
 
 use anyhow::anyhow;
@@ -101,6 +102,14 @@ pub struct PsqlTableRows<'a> {
 impl<'a> PartialEq for PsqlTableRows<'a> {
   fn eq(&self, other: &Self) -> bool {
     return self.table == other.table;
+  }
+}
+
+impl<'a> Eq for PsqlTableRows<'a> {}
+
+impl<'a> Hash for PsqlTableRows<'a> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    return self.table.name.hash(state);
   }
 }
 
