@@ -1,14 +1,15 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt::Debug as DebugTrait;
-
-use crate::common::macros::hashmap_literal;
+use std::hash::Hash;
+use std::iter::FromIterator;
 
 /// RoseTreeNode can start from multiple roots
-#[derive(Debug, Clone)]
+#[derive(Debug, Hash, Clone, Eq)]
 pub struct RoseTreeNode<T>
 where
-  T: Clone + DebugTrait,
+  T: Clone + DebugTrait + Eq + Hash,
 {
   pub parents: Vec<RoseTreeNode<T>>,
   pub children: Vec<RoseTreeNode<T>>,
@@ -17,7 +18,7 @@ where
 
 impl<T> RoseTreeNode<T>
 where
-  T: Clone + DebugTrait,
+  T: Clone + DebugTrait + Eq + Hash,
 {
   pub fn set_parents(&mut self, parents: Vec<RoseTreeNode<T>>) {
     self.parents = parents;
@@ -30,7 +31,7 @@ where
 
 impl<T> PartialEq for RoseTreeNode<T>
 where
-  T: Eq + Clone + DebugTrait,
+  T: Eq + Clone + DebugTrait + Hash,
 {
   fn eq(&self, other: &Self) -> bool {
     return self.value == other.value
@@ -41,7 +42,7 @@ where
 
 impl<T> RoseTreeNode<T>
 where
-  T: Clone + DebugTrait,
+  T: Clone + DebugTrait + Eq + Hash,
 {
   pub fn new(value: T) -> RoseTreeNode<T> {
     return RoseTreeNode {
@@ -52,14 +53,14 @@ where
   }
 
   /// This is a BFS problem
-  pub fn parents_by_level(node: RoseTreeNode<T>) -> HashMap<i32, Vec<RoseTreeNode<T>>> {
+  pub fn parents_by_level(node: RoseTreeNode<T>) -> HashMap<i32, HashSet<RoseTreeNode<T>>> {
     let mut level: i32 = 0;
 
     if node.parents.is_empty() {
       return Default::default();
     }
 
-    let mut ps_by_level: HashMap<i32, Vec<RoseTreeNode<T>>> = Default::default();
+    let mut ps_by_level: HashMap<i32, HashSet<RoseTreeNode<T>>> = Default::default();
     let mut deque_temp: VecDeque<RoseTreeNode<T>> = Default::default();
 
     deque_temp.extend(node.parents);
@@ -73,8 +74,8 @@ where
       for mut parent in parents.into_iter() {
         deque_temp.extend(parent.parents.drain(..));
 
-        let entry: &mut Vec<_> = ps_by_level.entry(level).or_insert(Default::default());
-        entry.push(parent);
+        let entry: &mut HashSet<_> = ps_by_level.entry(level).or_insert(Default::default());
+        entry.insert(parent);
       }
     }
 
@@ -87,15 +88,15 @@ where
 
   pub fn children_by_level(
     node: RoseTreeNode<T>,
-    parents_by_level: &mut HashMap<i32, Vec<RoseTreeNode<T>>>,
-  ) -> HashMap<i32, Vec<RoseTreeNode<T>>> {
+    parents_by_level: &mut HashMap<i32, HashSet<RoseTreeNode<T>>>,
+  ) -> HashMap<i32, HashSet<RoseTreeNode<T>>> {
     let mut level: i32 = 0;
 
     if node.children.is_empty() {
       return Default::default();
     }
 
-    let mut children_by_level: HashMap<i32, Vec<RoseTreeNode<T>>> = Default::default();
+    let mut children_by_level: HashMap<i32, HashSet<RoseTreeNode<T>>> = Default::default();
     let mut deque_temp: VecDeque<RoseTreeNode<T>> = Default::default();
 
     deque_temp.extend(node.children);
@@ -107,7 +108,7 @@ where
       let children: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
 
       for mut child in children.into_iter() {
-        let parents_by_level_from_current_child: HashMap<i32, Vec<RoseTreeNode<T>>> =
+        let parents_by_level_from_current_child: HashMap<i32, HashSet<_>> =
           RoseTreeNode::parents_by_level(child.clone());
 
         // Drain parents, we already put it in parents_by_level_from_current_child
@@ -127,9 +128,9 @@ where
 
         deque_temp.extend(child.children.drain(..));
 
-        let entry: &mut Vec<_> = children_by_level.entry(level).or_insert(Default::default());
+        let entry: &mut HashSet<_> = children_by_level.entry(level).or_insert(Default::default());
 
-        entry.push(child);
+        entry.insert(child);
       }
     }
 
@@ -139,8 +140,11 @@ where
 
 #[cfg(test)]
 mod test {
+  use super::*;
+
   mod parents_by_level {
-    use super::super::*;
+    use super::*;
+    use crate::common::macros::hashmap_literal;
 
     #[test]
     fn it_should_load_parents() {
@@ -153,22 +157,23 @@ mod test {
 
       node.set_parents(vec![parent_a, parent_b.clone()]);
 
-      let parents_vec = RoseTreeNode::parents_by_level(node);
+      let parents_by_level = RoseTreeNode::parents_by_level(node);
 
-      let expected_structure = hashmap_literal! {
-        -1 => vec![RoseTreeNode::new("level_1_parent_a"), parent_b.clone()],
-        -2 => vec![RoseTreeNode::new("level_2_parent_a")],
+      let expected_structure: HashMap<i32, HashSet<_>> = hashmap_literal! {
+        -1 => vec![parent_b.clone(), RoseTreeNode::new("level_1_parent_a")].into_iter().collect(),
+        -2 => vec![RoseTreeNode::new("level_2_parent_a")].into_iter().collect(),
       };
 
-      assert_eq!(parents_vec, expected_structure);
+      assert_eq!(parents_by_level, expected_structure);
     }
   }
 
   mod children_by_level {
-    use super::super::*;
+    use super::*;
 
     mod given_empty_parents {
       use super::*;
+      use crate::common::macros::hashmap_literal;
 
       #[test]
       fn it_should_load_children() {
@@ -184,17 +189,17 @@ mod test {
 
         node.set_children(vec![child_a, child_b.clone()]);
 
-        let mut parents_by_level: HashMap<i32, Vec<RoseTreeNode<&str>>> = Default::default();
+        let mut parents_by_level: HashMap<i32, HashSet<RoseTreeNode<&str>>> = Default::default();
         let children_vec = RoseTreeNode::children_by_level(node, &mut parents_by_level);
 
         let expected_children_structure = hashmap_literal! {
-          1 => vec![RoseTreeNode::new("level_1_child_a"), RoseTreeNode::new("level_1_child_b")],
-          2 => vec![RoseTreeNode::new("level_2_child_a")],
+          1 => vec![RoseTreeNode::new("level_1_child_a"), RoseTreeNode::new("level_1_child_b")].into_iter().collect(),
+          2 => vec![RoseTreeNode::new("level_2_child_a")].into_iter().collect(),
         };
 
         let expected_parents_structure = hashmap_literal! {
-          0 => vec![RoseTreeNode::new("level_0_parent_b")],
-          1 => vec![RoseTreeNode::new("level_1_parent_x")]
+          0 => vec![RoseTreeNode::new("level_0_parent_b")].into_iter().collect(),
+          1 => vec![RoseTreeNode::new("level_1_parent_x")].into_iter().collect()
         };
 
         assert_eq!(children_vec, expected_children_structure);
@@ -204,6 +209,7 @@ mod test {
 
     mod given_prefilled_parents {
       use super::*;
+      use crate::common::macros::hashmap_literal;
 
       #[test]
       fn it_should_load_parents_into_existing_levels() {
@@ -221,31 +227,30 @@ mod test {
 
         node.set_children(vec![child_a, child_b]);
 
-        let mut parents_by_level: HashMap<i32, Vec<RoseTreeNode<&str>>> = hashmap_literal! {
-          -1 => vec![RoseTreeNode::new("level_1_parent_a")],
+        let mut parents_by_level: HashMap<i32, HashSet<RoseTreeNode<&str>>> = hashmap_literal! {
+          -1 => vec![RoseTreeNode::new("level_1_parent_a")].into_iter().collect(),
           -2 => vec![
             RoseTreeNode::new("level_2_parent_a"),
             RoseTreeNode::new("level_2_parent_b")
-          ]
+          ].into_iter().collect()
         };
 
         let children_vec = RoseTreeNode::children_by_level(node, &mut parents_by_level);
 
         let expected_children_structure = hashmap_literal! {
-          1 => vec![RoseTreeNode::new("level_1_child_a"), RoseTreeNode::new("level_1_child_b")],
-          2 => vec![RoseTreeNode::new("level_2_child_a")],
+          1 => vec![RoseTreeNode::new("level_1_child_a"), RoseTreeNode::new("level_1_child_b")].into_iter().collect(),
+          2 => vec![RoseTreeNode::new("level_2_child_a")].into_iter().collect(),
         };
 
         let expected_parents_structure = hashmap_literal! {
-           0 => vec![RoseTreeNode::new("level_0_parent_a"), RoseTreeNode::new("level_0_parent_b")],
+           0 => vec![RoseTreeNode::new("level_0_parent_a"), RoseTreeNode::new("level_0_parent_b")].into_iter().collect(),
           -1 => vec![
             RoseTreeNode::new("level_1_parent_a"),
-            RoseTreeNode::new("level_1_parent_a") // Yes duplicate
-          ],
+          ].into_iter().collect(),
           -2 => vec![
             RoseTreeNode::new("level_2_parent_a"),
             RoseTreeNode::new("level_2_parent_b")
-          ]
+          ].into_iter().collect()
         };
 
         assert_eq!(
