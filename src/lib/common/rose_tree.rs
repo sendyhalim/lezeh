@@ -66,22 +66,15 @@ where
 
     while !deque_temp.is_empty() {
       level = level - 1;
-      // Drain first the temp into a vec
-      let temp: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
+      // Move parents to vec, this will replace node.parents with empty vec which is
+      // expected bcs we don't care of node <-> parents relations after this
+      let parents: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
 
-      // Now get all the parents for all nodes at the current level
-      for mut node in temp.into_iter() {
-        // Move parents to vec, this will replace node.parents with empty vec which is
-        // expected bcs we don't care of node <-> parents relations after this
-        let parents: Vec<RoseTreeNode<T>> = node.parents.drain(..).collect();
-
-        for parent in parents.into_iter() {
-          deque_temp.push_back(parent);
-        }
+      for mut parent in parents.into_iter() {
+        deque_temp.extend(parent.parents.drain(..));
 
         let entry: &mut Vec<_> = ps_by_level.entry(level).or_insert(Default::default());
-
-        entry.push(node);
+        entry.push(parent);
       }
     }
 
@@ -127,7 +120,7 @@ where
 
         for (parent_level, parents) in parents_by_level_from_current_child.into_iter() {
           parents_by_level
-            .entry((level + 1) - parent_level.abs())
+            .entry(level - parent_level.abs())
             .or_insert(Default::default())
             .extend(parents);
         }
@@ -218,15 +211,15 @@ mod test {
         let mut child_a = RoseTreeNode::new("level_1_child_a");
         let mut child_b = RoseTreeNode::new("level_1_child_b");
 
-        let mut parent_x = RoseTreeNode::new("level_1_parent_x");
-        parent_x.set_parents(vec![RoseTreeNode::new("level_2_parent_x")]);
+        let mut parent_a = RoseTreeNode::new("level_0_parent_a");
+        parent_a.set_parents(vec![RoseTreeNode::new("level_1_parent_a")]);
 
-        child_a.set_parents(vec![parent_x.clone()]);
+        child_a.set_parents(vec![parent_a.clone()]);
 
         child_a.set_children(vec![RoseTreeNode::new("level_2_child_a")]);
-        child_b.set_parents(vec![RoseTreeNode::new("level_1_parent_b")]);
+        child_b.set_parents(vec![RoseTreeNode::new("level_0_parent_b")]);
 
-        node.set_children(vec![child_a, child_b.clone()]);
+        node.set_children(vec![child_a, child_b]);
 
         let mut parents_by_level: HashMap<i32, Vec<RoseTreeNode<&str>>> = hashmap_literal! {
           -1 => vec![RoseTreeNode::new("level_1_parent_a")],
@@ -239,13 +232,16 @@ mod test {
         let children_vec = RoseTreeNode::children_by_level(node, &mut parents_by_level);
 
         let expected_children_structure = hashmap_literal! {
-          1 => vec![RoseTreeNode::new("level_1_child_a"), child_b.clone()],
+          1 => vec![RoseTreeNode::new("level_1_child_a"), RoseTreeNode::new("level_1_child_b")],
           2 => vec![RoseTreeNode::new("level_2_child_a")],
         };
 
         let expected_parents_structure = hashmap_literal! {
-           0 => vec![RoseTreeNode::new("level_1_parent_x")],
-          -1 => vec![RoseTreeNode::new("level_1_parent_a"), RoseTreeNode::new("level_2_parent_x")],
+           0 => vec![RoseTreeNode::new("level_0_parent_a"), RoseTreeNode::new("level_0_parent_b")],
+          -1 => vec![
+            RoseTreeNode::new("level_1_parent_a"),
+            RoseTreeNode::new("level_1_parent_a") // Yes duplicate
+          ],
           -2 => vec![
             RoseTreeNode::new("level_2_parent_a"),
             RoseTreeNode::new("level_2_parent_b")
