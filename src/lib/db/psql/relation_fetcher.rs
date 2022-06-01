@@ -1,6 +1,4 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use anyhow::anyhow;
@@ -514,6 +512,8 @@ fn psql_table_map_from_foreign_key_info_rows(
 #[cfg(test)]
 mod test {
   use super::*;
+  use std::borrow::Cow;
+  use std::collections::HashSet;
 
   impl<'a> PsqlTable<'a> {
     fn basic<S>(schema: S, name: S, primary_column: PsqlTableColumn<'a>) -> PsqlTable
@@ -532,7 +532,7 @@ mod test {
   }
 
   mod psql_tables_from_foreign_key_info_rows {
-    use super::super::*;
+    use super::*;
     use crate::common::macros::hashmap_literal;
     use crate::common::string::s;
 
@@ -750,7 +750,7 @@ mod test {
       // Make sure created tables have equal size
       // with unique table names in fk info rows
       // -------------------------------------------
-      let available_tables: HashSet<&String> =
+      let _available_tables: HashSet<&String> =
         fk_info_rows.iter().map(|row| &row.table_name).collect();
 
       assert_eq!(psql_table_by_name.len(), 11)
