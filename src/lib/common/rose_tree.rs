@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt::Debug as DebugTrait;
 use std::hash::Hash;
-use std::iter::FromIterator;
 
 /// RoseTreeNode can start from multiple roots
 #[derive(Debug, Hash, Clone, Eq)]
