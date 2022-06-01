@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use lib::common::rose_tree::RoseTreeNode;
 use lib::db::psql;
-use lib::db::psql::PsqlTableRows;
+use lib::db::psql::dto::PsqlTableRows;
 
 use lib::common::config::Config;
 use lib::common::handlebars::HandlebarsRenderer;
@@ -49,7 +49,7 @@ async fn main() -> ResultAnyError<()> {
   env_logger::init();
 
   let handle = std::thread::spawn(|| {
-    let mut psql = psql::Psql::new(&lib::db::psql::PsqlCreds {
+    let psql = psql::connection::PsqlConnection::new(&lib::db::psql::connection::PsqlCreds {
       host: "localhost".to_owned(),
       database_name: "gepeel_app".to_owned(),
       username: "sendyhalim".to_owned(),
@@ -57,13 +57,13 @@ async fn main() -> ResultAnyError<()> {
     })
     .unwrap();
 
-    let psql_table_by_name = psql.load_table_structure(Option::None).unwrap();
+    let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(psql);
 
-    let mut db_fetcher = psql::DbFetcher { psql };
+    let psql_table_by_name = relation_fetcher.load_table_structure(Option::None).unwrap();
 
-    let mut trees = db_fetcher
+    let mut trees = relation_fetcher
       .fetch_rose_trees_to_be_inserted(
-        &psql::FetchRowInput {
+        &psql::relation_fetcher::FetchRowInput {
           schema: Some("public"),
           table_name: "orders",
           column_name: "id",
