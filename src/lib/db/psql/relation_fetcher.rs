@@ -1,158 +1,16 @@
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::hash::Hash;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use anyhow::anyhow;
 use itertools::Itertools;
-use postgres::config::Config as PsqlConfig;
-use postgres::Client as PsqlClient;
 use postgres::Row;
 
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
-
-type AnyString<'a> = Cow<'a, str>;
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub struct PsqlTableColumn<'a> {
-  pub name: AnyString<'a>,
-  pub data_type: AnyString<'a>,
-}
-
-impl<'a> PsqlTableColumn<'a> {
-  pub fn new<S>(name: S, data_type: S) -> PsqlTableColumn<'a>
-  where
-    S: Into<AnyString<'a>>,
-  {
-    return PsqlTableColumn {
-      name: name.into(),
-      data_type: data_type.into(),
-    };
-  }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub struct PsqlForeignKey<'a> {
-  pub name: AnyString<'a>,
-  pub column: PsqlTableColumn<'a>,
-  pub foreign_table_schema: AnyString<'a>,
-  pub foreign_table_name: AnyString<'a>,
-}
-
-impl<'a> PsqlForeignKey<'a> {
-  fn new<S>(
-    name: S,
-    column: PsqlTableColumn<'a>,
-    foreign_table_schema: S,
-    foreign_table_name: S,
-  ) -> PsqlForeignKey<'a>
-  where
-    S: Into<AnyString<'a>>,
-  {
-    return PsqlForeignKey {
-      name: name.into(),
-      column: column,
-      foreign_table_schema: foreign_table_schema.into(),
-      foreign_table_name: foreign_table_name.into(),
-    };
-  }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTable<'a> {
-  pub schema: AnyString<'a>,
-  pub name: AnyString<'a>,
-  pub primary_column: PsqlTableColumn<'a>,
-  pub columns: BTreeSet<PsqlTableColumn<'a>>,
-  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-}
-
-impl<'a> PsqlTable<'a> {
-  fn new<S>(
-    schema: S,
-    name: S,
-    primary_column: PsqlTableColumn<'a>,
-    columns: BTreeSet<PsqlTableColumn<'a>>,
-    referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-    referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-  ) -> PsqlTable<'a>
-  where
-    S: Into<AnyString<'a>>,
-  {
-    return PsqlTable {
-      schema: schema.into(),
-      name: name.into(),
-      primary_column,
-      columns,
-      referenced_fk_by_constraint_name,
-      referencing_fk_by_constraint_name,
-    };
-  }
-}
-
-#[derive(Debug, Clone)]
-pub struct PsqlTableRows<'a> {
-  pub table: PsqlTable<'a>,
-  pub rows: Vec<Rc<Row>>,
-}
-
-impl<'a> PartialEq for PsqlTableRows<'a> {
-  fn eq(&self, other: &Self) -> bool {
-    return self.table == other.table;
-  }
-}
-
-impl<'a> Eq for PsqlTableRows<'a> {}
-
-impl<'a> Hash for PsqlTableRows<'a> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    return self.table.name.hash(state);
-  }
-}
-
-#[derive(PartialEq, Debug)]
-pub struct ForeignKeyInformationRow {
-  constraint_name: String,
-
-  // From table X
-  table_schema: String,
-  table_name: String,
-  column_name: String,
-  column_data_type: String,
-
-  // referencing to table Y
-  foreign_table_schema: String,
-  foreign_table_name: String,
-  foreign_column_name: String,
-  foreign_column_data_type: String,
-}
-
-pub struct Psql {
-  client: PsqlClient,
-}
-
-pub struct PsqlCreds {
-  pub host: String,
-  pub database_name: String,
-  pub username: String,
-  pub password: Option<String>,
-}
-
-impl Psql {
-  pub fn new(creds: &PsqlCreds) -> ResultAnyError<Psql> {
-    return Ok(Psql {
-      client: PsqlConfig::new()
-        .user(&creds.username)
-        // .password(creds.password.as_ref().unwrap()) // Should defaults to empty binary
-        .host(&creds.host)
-        .dbname(&creds.database_name)
-        .connect(postgres::NoTls)?,
-    });
-  }
-}
+use crate::db::psql::connection::PsqlConnection;
+use crate::db::psql::dto::*;
 
 const TABLE_WITH_FK_QUERY: &'static str = "
     SELECT
@@ -184,14 +42,35 @@ const TABLE_WITH_FK_QUERY: &'static str = "
     WHERE tc.constraint_type = 'FOREIGN KEY';
 ";
 
-impl Psql {
+#[derive(PartialEq, Debug)]
+pub struct ForeignKeyInformationRow {
+  constraint_name: String,
+
+  // From table X
+  table_schema: String,
+  table_name: String,
+  column_name: String,
+  column_data_type: String,
+
+  // referencing to table Y
+  foreign_table_schema: String,
+  foreign_table_name: String,
+  foreign_column_name: String,
+  foreign_column_data_type: String,
+}
+
+pub struct Query {
+  connection: PsqlConnection,
+}
+
+impl Query {
   pub fn fetch_fk_info(
     &mut self,
     _schema: Option<String>,
   ) -> ResultAnyError<Vec<ForeignKeyInformationRow>> {
     // First try to build the UML for all of the tables
     // we'll query from psql information_schema tables.
-    let rows: Vec<Row> = self.client.query(TABLE_WITH_FK_QUERY, &[])?;
+    let rows: Vec<Row> = self.connection.get().query(TABLE_WITH_FK_QUERY, &[])?;
 
     let fk_info_rows: Vec<ForeignKeyInformationRow> = rows
       .into_iter()
@@ -213,21 +92,8 @@ impl Psql {
     return Ok(fk_info_rows);
   }
 
-  pub fn load_table_structure<'a, 'b>(
-    &'a mut self,
-    schema: Option<String>,
-  ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
-    let fk_info_rows = self.fetch_fk_info(schema)?;
-
-    let mut table_by_name = self.get_table_by_name()?;
-
-    psql_table_map_from_foreign_key_info_rows(&mut table_by_name, &fk_info_rows);
-
-    return Ok(table_by_name);
-  }
-
   pub fn get_table_by_name<'a, 'b>(&'a mut self) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
-    let rows: Vec<Row> = self.client.query(
+    let rows: Vec<Row> = self.connection.get().query(
       "
       SELECT
         tc.constraint_name,
@@ -271,10 +137,35 @@ impl Psql {
 
     return Ok(psql_table_by_name);
   }
+
+  fn find_rows(&mut self, input: &FetchRowInput) -> ResultAnyError<Vec<Row>> {
+    let query_str = format!(
+      "SELECT * FROM {} where {} = {}",
+      input.table_name, input.column_name, input.column_value
+    );
+
+    println!("Fetching row with query `{}`", query_str);
+
+    return self
+      .connection
+      .get()
+      .query(&query_str, &[])
+      .map_err(anyhow::Error::from);
+  }
 }
 
-pub struct DbFetcher {
-  pub psql: Psql,
+pub struct RelationFetcher {
+  query: Query,
+}
+
+impl RelationFetcher {
+  pub fn new(psqlConnection: PsqlConnection) -> RelationFetcher {
+    return RelationFetcher {
+      query: Query {
+        connection: psqlConnection,
+      },
+    };
+  }
 }
 
 pub struct FetchRowInput<'a> {
@@ -284,9 +175,30 @@ pub struct FetchRowInput<'a> {
   pub column_value: &'a str,
 }
 
-impl DbFetcher {
+impl RelationFetcher {
+  fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> String {
+    if id_column_spec.data_type == "integer" {
+      return format!("{}", row.get::<_, i32>(id_column_spec.name.as_ref()));
+    }
+
+    return row.get::<_, String>(id_column_spec.name.as_ref());
+  }
+
+  pub fn load_table_structure<'a, 'b>(
+    &'a mut self,
+    schema: Option<String>,
+  ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
+    let fk_info_rows = self.query.fetch_fk_info(schema)?;
+
+    let mut table_by_name = self.query.get_table_by_name()?;
+
+    psql_table_map_from_foreign_key_info_rows(&mut table_by_name, &fk_info_rows);
+
+    return Ok(table_by_name);
+  }
+
   fn find_one_row(&mut self, input: &FetchRowInput) -> ResultAnyError<Option<Row>> {
-    let rows_result = self.find_rows(input);
+    let rows_result = self.query.find_rows(input);
 
     return match rows_result {
       Err(any) => Err(any),
@@ -302,29 +214,6 @@ impl DbFetcher {
         return Ok(Some(rows.remove(0)));
       }
     };
-  }
-
-  fn find_rows(&mut self, input: &FetchRowInput) -> ResultAnyError<Vec<Row>> {
-    let query_str = format!(
-      "SELECT * FROM {} where {} = {}",
-      input.table_name, input.column_name, input.column_value
-    );
-
-    println!("Fetching row with query `{}`", query_str);
-
-    return self
-      .psql
-      .client
-      .query(&query_str, &[])
-      .map_err(anyhow::Error::from);
-  }
-
-  fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> String {
-    if id_column_spec.data_type == "integer" {
-      return format!("{}", row.get::<_, i32>(id_column_spec.name.as_ref()));
-    }
-
-    return row.get::<_, String>(id_column_spec.name.as_ref());
   }
 
   pub fn fetch_rose_trees_to_be_inserted<'a>(
@@ -385,7 +274,7 @@ impl DbFetcher {
 
     let row_node_with_parents = self.fetch_referencing_rows(
       current_table.clone(),
-      &DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      &RelationFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
       psql_table_by_name,
       &mut fetched_table_by_name,
     )?;
@@ -414,7 +303,7 @@ impl DbFetcher {
     let row_node_with_children = self.fetch_referenced_rows(
       current_table.clone(),
       &current_table.primary_column,
-      &DbFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      &RelationFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
       psql_table_by_name,
       &mut fetched_table_by_name,
     )?;
@@ -459,7 +348,7 @@ impl DbFetcher {
         return self
           .fetch_referencing_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
-            &DbFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            &RelationFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -508,7 +397,7 @@ impl DbFetcher {
         return self
           .fetch_referencing_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
-            &DbFetcher::get_id_from_row(row, &psql_foreign_key.column),
+            &RelationFetcher::get_id_from_row(row, &psql_foreign_key.column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -528,7 +417,7 @@ impl DbFetcher {
           .fetch_referenced_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
             &psql_foreign_key.column,
-            &DbFetcher::get_id_from_row(row, &primary_column),
+            &RelationFetcher::get_id_from_row(row, &primary_column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -547,7 +436,7 @@ impl DbFetcher {
     column_name: &str,
     id: &str,
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
-    let rows = self.find_rows(&FetchRowInput {
+    let rows = self.query.find_rows(&FetchRowInput {
       schema: Some(table.schema.as_ref()),
       table_name: table.name.as_ref(),
       column_name,
@@ -861,7 +750,7 @@ mod test {
       // Make sure created tables have equal size
       // with unique table names in fk info rows
       // -------------------------------------------
-      let available_tables: BTreeSet<&String> =
+      let available_tables: HashSet<&String> =
         fk_info_rows.iter().map(|row| &row.table_name).collect();
 
       assert_eq!(psql_table_by_name.len(), 11)
