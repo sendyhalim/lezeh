@@ -159,10 +159,10 @@ pub struct RelationFetcher {
 }
 
 impl RelationFetcher {
-  pub fn new(psqlConnection: PsqlConnection) -> RelationFetcher {
+  pub fn new(psql_connection: PsqlConnection) -> RelationFetcher {
     return RelationFetcher {
       query: Query {
-        connection: psqlConnection,
+        connection: psql_connection,
       },
     };
   }
