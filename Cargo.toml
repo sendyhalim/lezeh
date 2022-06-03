@@ -40,6 +40,10 @@ urlshortener = { version = "3.0.0" }
 diesel = { version = "1.4", features = ["postgres"] }
 itertools = { version = "0.10.1" }
 postgres = { version = "0.19" }
+postgres-types = { version = "0.2.3" }
+postgres-protocol = { version = "0.6.4" }
+rust_decimal = { version = "1.24", features = ["db-postgres"] }
+
 thiserror = { version = "1.0" }
 anyhow = { version = "1.0" }
 

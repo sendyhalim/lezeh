@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use anyhow::anyhow;
 use clap::App as Cli;
@@ -74,7 +75,17 @@ async fn main() -> ResultAnyError<()> {
       .unwrap();
 
     let tree: RoseTreeNode<PsqlTableRows> = trees.remove(0);
-    RoseTreeNode::parents_by_level(tree);
+    let mut parents_by_level: HashMap<i32, HashSet<_>> =
+      RoseTreeNode::parents_by_level(tree.clone());
+    let children_by_level: HashMap<i32, HashSet<_>> =
+      RoseTreeNode::children_by_level(tree, &mut parents_by_level);
+
+    println!("{:#?}", parents_by_level);
+    println!("{:#?}", children_by_level);
+    let statements: Vec<String> =
+      lib::db::psql::relation_insert::RelationInsert::into_insert_statements(parents_by_level);
+
+    println!("{:#?}", statements);
   });
 
   handle.join().unwrap();
