@@ -1,4 +1,5 @@
 use crate::db::psql::dto::PsqlTableRows;
+use crate::db::psql::dto::Uuid;
 use postgres::row::Row;
 use postgres::types::FromSql;
 use postgres::Column;
@@ -12,7 +13,9 @@ impl RelationInsert {
   pub fn into_insert_statements(
     rows_by_level: HashMap<i32, HashSet<PsqlTableRows>>,
   ) -> Vec<String> {
-    let levels: Vec<&i32> = rows_by_level.keys().collect();
+    let mut levels: Vec<&i32> = rows_by_level.keys().collect();
+
+    levels.sort();
 
     let statements: Vec<String> = levels
       .iter()
@@ -70,7 +73,7 @@ impl RelationInsert {
 /// from postgres::row::Row
 struct FromSqlSink {
   raw: Vec<u8>,
-  ty: postgres::types::Type,
+  ty: Option<postgres::types::Type>, // None if null
 }
 
 impl<'a> FromSql<'a> for FromSqlSink {
@@ -80,20 +83,28 @@ impl<'a> FromSql<'a> for FromSqlSink {
   ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
     let sink = FromSqlSink {
       raw: raw.to_owned(),
-      ty: ty.to_owned(),
+      ty: Some(ty.to_owned()),
     };
 
     return Ok(sink);
   }
 
-  fn accepts(ty: &PsqlType) -> bool {
+  fn from_sql_null(_ty: &PsqlType) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    return Ok(FromSqlSink {
+      raw: vec![],
+      ty: None,
+    });
+  }
+
+  fn accepts(_ty: &PsqlType) -> bool {
     return true;
   }
 }
 
 impl FromSqlSink {
   pub fn enclosed_statement_string_value(&self, enclosing_val: &str) -> String {
-    println!("STRING VALUE OF type {} {:#?}", self.ty, self.raw);
+    // println!("STRING VALUE OF type {:?} {:#?}", self.ty, self.raw);
+
     return format!(
       "{}{}{}",
       enclosing_val,
@@ -103,14 +114,20 @@ impl FromSqlSink {
   }
 
   pub fn to_string_for_statement(&self) -> String {
-    // let ty = &self.ty;
+    if self.ty.is_none() {
+      return "null".into();
+    }
 
-    return match self.ty {
+    let ty: &PsqlType = self.ty.as_ref().unwrap();
+
+    return match *ty {
       PsqlType::VARCHAR
       | PsqlType::TEXT
       | PsqlType::BPCHAR
       | PsqlType::NAME
       | PsqlType::UNKNOWN => self.enclosed_statement_string_value("'"),
+
+      ref ty if ty.name() == "citext" => self.enclosed_statement_string_value("'"),
 
       PsqlType::BOOL => postgres_protocol::types::bool_from_sql(&self.raw[..])
         .unwrap()
@@ -132,17 +149,15 @@ impl FromSqlSink {
         .unwrap()
         .to_string(),
 
-      PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&self.ty, &self.raw)
+      PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&ty, &self.raw)
         .unwrap()
         .to_string(),
 
-      _ => String::from_utf8_lossy(&self.raw[..]).to_string(),
-      // PsqlType::UUID => postgres_protocol::types::text_from_sql(&self.raw[..])
-      // .unwrap()
-      // .into(),
+      PsqlType::UUID => {
+        return format!("'{}'", Uuid::from_sql(ty, &self.raw).unwrap().to_string());
+      }
 
-      // // ref self.ty if ty.name() == "citext" => self.enclosed_statement_value("'"),
-      // _ => self.enclosed_statement_string_value(""),
+      _ => String::from_utf8_lossy(&self.raw[..]).to_string(),
     };
   }
 }

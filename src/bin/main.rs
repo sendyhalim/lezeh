@@ -62,19 +62,20 @@ async fn main() -> ResultAnyError<()> {
 
     let psql_table_by_name = relation_fetcher.load_table_structure(Option::None).unwrap();
 
+    let input = psql::relation_fetcher::FetchRowInput {
+      schema: Some("public"),
+      table_name: "store_staffs",
+      column_name: "email",
+      column_value: Box::new("bigpawofficial@gmail.com"),
+    };
+
     let mut trees = relation_fetcher
-      .fetch_rose_trees_to_be_inserted(
-        &psql::relation_fetcher::FetchRowInput {
-          schema: Some("public"),
-          table_name: "orders",
-          column_name: "id",
-          column_value: "1250",
-        },
-        &psql_table_by_name,
-      )
+      .fetch_rose_trees_to_be_inserted(&input, &psql_table_by_name)
       .unwrap();
 
     let tree: RoseTreeNode<PsqlTableRows> = trees.remove(0);
+    println!("tree {:#?}", tree);
+
     let mut parents_by_level: HashMap<i32, HashSet<_>> =
       RoseTreeNode::parents_by_level(tree.clone());
     let children_by_level: HashMap<i32, HashSet<_>> =

@@ -117,10 +117,10 @@ where
         // Drain parents, we already put it in parents_by_level_from_current_child
         child.parents = vec![];
 
-        println!(
-          "[{:#?}]Constructing parents {:#?}",
-          child, parents_by_level_from_current_child
-        );
+        // println!(
+        //   "[{:#?}]Constructing parents {:#?}",
+        //   child, parents_by_level_from_current_child
+        // );
 
         for (parent_level, parents) in parents_by_level_from_current_child.into_iter() {
           parents_by_level
