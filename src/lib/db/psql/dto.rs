@@ -4,6 +4,9 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use postgres::types::to_sql_checked;
+use postgres::types::FromSql;
+use postgres::types::ToSql;
 use postgres::Row;
 
 type AnyString<'a> = Cow<'a, str>;
@@ -46,7 +49,7 @@ impl<'a> PsqlForeignKey<'a> {
   {
     return PsqlForeignKey {
       name: name.into(),
-      column: column,
+      column,
       foreign_table_schema: foreign_table_schema.into(),
       foreign_table_name: foreign_table_name.into(),
     };
@@ -103,5 +106,60 @@ impl<'a> Eq for PsqlTableRows<'a> {}
 impl<'a> Hash for PsqlTableRows<'a> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     return self.table.name.hash(state);
+  }
+}
+
+#[derive(Debug)]
+pub struct Uuid {
+  bytes: [u8; 16],
+}
+
+impl ToSql for Uuid {
+  fn to_sql(
+    &self,
+    _ty: &postgres_types::Type,
+    out: &mut postgres_types::private::BytesMut,
+  ) -> Result<postgres_types::IsNull, Box<dyn std::error::Error + Sync + Send>>
+  where
+    Self: Sized,
+  {
+    out.extend_from_slice(&self.bytes);
+
+    return Ok(postgres_types::IsNull::No);
+  }
+
+  fn accepts(ty: &postgres_types::Type) -> bool
+  where
+    Self: Sized,
+  {
+    return *ty == postgres_types::Type::UUID;
+  }
+
+  to_sql_checked!();
+}
+
+impl<'a> FromSql<'a> for Uuid {
+  fn from_sql(
+    _ty: &postgres_types::Type,
+    raw: &'a [u8],
+  ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    let mut bytes: [u8; 16] = [0; 16];
+
+    bytes.clone_from_slice(raw);
+
+    return Ok(Uuid { bytes });
+  }
+
+  fn accepts(ty: &postgres_types::Type) -> bool {
+    return *ty == postgres_types::Type::UUID;
+  }
+}
+
+impl ToString for Uuid {
+  fn to_string(&self) -> String {
+    return uuid::Builder::from_bytes(self.bytes)
+      .into_uuid()
+      .to_string();
+    // return String::from_utf8_lossy(&self.bytes).to_string();
   }
 }

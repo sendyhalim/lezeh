@@ -3,12 +3,15 @@ use std::rc::Rc;
 
 use anyhow::anyhow;
 use itertools::Itertools;
+use postgres::types::ToSql;
 use postgres::Row;
 
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 use crate::db::psql::connection::PsqlConnection;
 use crate::db::psql::dto::*;
+
+type PsqlParamValue = Box<dyn ToSql + Sync>;
 
 const TABLE_WITH_FK_QUERY: &'static str = "
     SELECT
@@ -138,16 +141,15 @@ impl Query {
 
   fn find_rows(&mut self, input: &FetchRowInput) -> ResultAnyError<Vec<Row>> {
     let query_str = format!(
-      "SELECT * FROM {} where {} = {}",
-      input.table_name, input.column_name, input.column_value
+      "SELECT * FROM {} where {} = $1",
+      input.table_name, input.column_name
     );
 
-    println!("Fetching row with query `{}`", query_str);
+    let connection = self.connection.get();
+    let statement = connection.prepare(&query_str)?;
 
-    return self
-      .connection
-      .get()
-      .query(&query_str, &[])
+    return connection
+      .query(&statement, &[input.column_value.as_ref()])
       .map_err(anyhow::Error::from);
   }
 }
@@ -170,16 +172,20 @@ pub struct FetchRowInput<'a> {
   pub schema: Option<&'a str>,
   pub table_name: &'a str,
   pub column_name: &'a str,
-  pub column_value: &'a str,
+  pub column_value: PsqlParamValue,
 }
 
 impl RelationFetcher {
-  fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> String {
+  fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> PsqlParamValue {
     if id_column_spec.data_type == "integer" {
-      return format!("{}", row.get::<_, i32>(id_column_spec.name.as_ref()));
+      return Box::new(row.get::<_, i32>(id_column_spec.name.as_ref()));
     }
 
-    return row.get::<_, String>(id_column_spec.name.as_ref());
+    if id_column_spec.data_type == "uuid" {
+      return Box::new(row.get::<_, Uuid>(id_column_spec.name.as_ref()));
+    }
+
+    return Box::new(row.get::<_, String>(id_column_spec.name.as_ref()));
   }
 
   pub fn load_table_structure<'a, 'b>(
@@ -227,7 +233,7 @@ impl RelationFetcher {
 
     let row: Row = self.find_one_row(input)?.ok_or_else(|| {
       anyhow!(
-        "Could not find row {} {} in table {}",
+        "Could not find row {} {:#?} in table {}",
         input.column_name,
         input.column_value,
         input.table_name
@@ -272,7 +278,7 @@ impl RelationFetcher {
 
     let row_node_with_parents = self.fetch_referencing_rows(
       current_table.clone(),
-      &RelationFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      RelationFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
       psql_table_by_name,
       &mut fetched_table_by_name,
     )?;
@@ -301,7 +307,7 @@ impl RelationFetcher {
     let row_node_with_children = self.fetch_referenced_rows(
       current_table.clone(),
       &current_table.primary_column,
-      &RelationFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
+      RelationFetcher::get_id_from_row(row.as_ref(), &current_table.primary_column),
       psql_table_by_name,
       &mut fetched_table_by_name,
     )?;
@@ -316,7 +322,7 @@ impl RelationFetcher {
   fn fetch_referencing_rows<'a>(
     &mut self,
     table: PsqlTable<'a>,
-    id: &str,
+    id: PsqlParamValue,
     psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
     fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
   ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows<'a>>>> {
@@ -325,8 +331,6 @@ impl RelationFetcher {
     }
 
     fetched_table_by_name.insert(table.name.to_string(), table.clone());
-
-    println!("Creating initial node from table row {} {}", table.name, id);
 
     let mut row_node =
       self.create_initial_node_from_row(table.clone(), &table.primary_column.name, id)?;
@@ -346,7 +350,7 @@ impl RelationFetcher {
         return self
           .fetch_referencing_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
-            &RelationFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
+            RelationFetcher::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -363,7 +367,7 @@ impl RelationFetcher {
     &mut self,
     table: PsqlTable<'a>,
     fk_column: &PsqlTableColumn,
-    id: &str,
+    id: PsqlParamValue,
     psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
     fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
   ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows<'a>>>> {
@@ -372,11 +376,6 @@ impl RelationFetcher {
     }
 
     fetched_table_by_name.insert(table.name.to_string(), table.clone());
-
-    println!(
-      "[{}] Creating initial node from table row {}",
-      table.name, id
-    );
 
     let mut row_node = self.create_initial_node_from_row(table.clone(), &fk_column.name, id)?;
 
@@ -395,7 +394,7 @@ impl RelationFetcher {
         return self
           .fetch_referencing_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
-            &RelationFetcher::get_id_from_row(row, &psql_foreign_key.column),
+            RelationFetcher::get_id_from_row(row, &psql_foreign_key.column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -415,7 +414,7 @@ impl RelationFetcher {
           .fetch_referenced_rows(
             psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
             &psql_foreign_key.column,
-            &RelationFetcher::get_id_from_row(row, &primary_column),
+            RelationFetcher::get_id_from_row(row, &primary_column),
             psql_table_by_name,
             fetched_table_by_name,
           )
@@ -432,7 +431,7 @@ impl RelationFetcher {
     &mut self,
     table: PsqlTable<'a>,
     column_name: &str,
-    id: &str,
+    id: PsqlParamValue,
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     let rows = self.query.find_rows(&FetchRowInput {
       schema: Some(table.schema.as_ref()),
