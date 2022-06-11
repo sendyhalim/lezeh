@@ -74,8 +74,8 @@ pub struct Config {
   pub ghub: GhubConfig,
   pub bitly: Option<BitlyConfig>,
   pub deployment: DeploymentConfig,
+  pub db_by_name: Option<HashMap<String, DbConfig>>,
 }
-
 impl Config {
   pub fn new(setting_path: impl AsRef<Path>) -> ResultAnyError<Config> {
     let config_str = fs::read_to_string(setting_path)?;
@@ -85,6 +85,18 @@ impl Config {
       config.deployment.merge_feature_branches = Some(Default::default());
     }
 
+    println!("{:#?}", config);
+
     return Ok(config);
   }
+}
+
+/// DB Related Command Config
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbConfig {
+  pub host: String,
+  pub port: u32,
+  pub database: String,
+  pub username: String,
+  pub password: Option<String>,
 }
