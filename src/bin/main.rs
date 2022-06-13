@@ -12,6 +12,7 @@ use lib::db::psql::dto::PsqlTableRows;
 
 use lib::common::config::Config;
 use lib::common::types::ResultAnyError;
+use lib::db::cli::DbCli;
 use lib::deployment::cli::DeploymentCli;
 use lib::url::cli::UrlCli;
 
@@ -89,12 +90,13 @@ async fn main() -> ResultAnyError<()> {
     .about(built_info::PKG_DESCRIPTION)
     .subcommand(DeploymentCli::cmd())
     .subcommand(UrlCli::cmd())
+    .subcommand(DbCli::cmd())
     .get_matches();
 
   match cli.subcommand() {
     ("deployment", Some(cli)) => DeploymentCli::run(cli, config, logger).await?,
     ("url", Some(url_cli)) => UrlCli::run(url_cli, config).await?,
-    ("db", Some(db_cli)) => println!("Can't do nothign yet"),
+    ("db", Some(db_cli)) => DbCli::run(db_cli, config).await?,
     _ => {}
   }
 
