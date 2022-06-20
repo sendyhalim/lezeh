@@ -28,35 +28,41 @@ impl DbCli {
             Arg::with_name("schema")
               .long("--schema")
               .required(false)
+              .takes_value(true)
               .help("Db schema"),
           )
           .arg(
             Arg::with_name("table")
               .long("--table")
               .required(true)
+              .takes_value(true)
               .help("Db table"),
           )
           .arg(
             Arg::with_name("column")
               .long("--column")
               .required(false)
+              .takes_value(true)
               .help("The column that the values are tied to, default to id"),
           )
           .arg(
             Arg::with_name("values")
               .long("--values")
               .required(true)
+              .takes_value(true)
               .help("Comma separated values of the column to be fetched"),
           )
           .arg(
             Arg::with_name("source_db")
               .long("--source-db")
               .required(true)
+              .takes_value(true)
               .help("Source db to fetch data from"),
           )
           .arg(
             Arg::with_name("target_db")
               .required(true)
+              .takes_value(true)
               .long("--target-db")
               .help("Target db to insert db"),
           ),
@@ -65,22 +71,35 @@ impl DbCli {
 
   pub async fn run(cli: &ArgMatches<'_>, config: Config, logger: Logger) -> ResultAnyError<()> {
     match cli.subcommand() {
-      ("cherry-pick", Some(cherry_pick_cli)) => DbCli::cherry_pick(
-        cherry_pick_cli.value_of("source_db").map(|s| s.to_owned()),
-        cherry_pick_cli.value_of("target_db").map(|s| s.to_owned()),
-        cherry_pick_cli.value_of("schema").map(|s| s.to_owned()),
-        cherry_pick_cli.value_of("table").map(|s| s.to_owned()),
-        cherry_pick_cli.value_of("column").map(|s| s.to_owned()),
-        cherry_pick_cli.value_of("values").map(|s| s.to_owned()),
-        config,
-        logger,
-      ),
+      ("cherry-pick", Some(cherry_pick_cli)) => {
+        let values: Vec<String> = cherry_pick_cli
+          .values_of("values")
+          .or_else(|| Default::default())
+          .unwrap()
+          .into_iter()
+          .map(|s| s.to_owned())
+          .collect();
+
+        return DbCli::cherry_pick(
+          cherry_pick_cli.value_of("source_db").map(|s| s.to_owned()),
+          cherry_pick_cli.value_of("target_db").map(|s| s.to_owned()),
+          cherry_pick_cli.value_of("schema").map(|s| s.to_owned()),
+          cherry_pick_cli.value_of("table").map(|s| s.to_owned()),
+          cherry_pick_cli.value_of("column").map(|s| s.to_owned()),
+          values,
+          config,
+          logger,
+        );
+      }
       _ => Ok(()),
     }
   }
 
   /// TODO:
-  /// * Still broken, cannot find source DB input
+  /// * Still broken, when passed criteria value need to check column type value
+  ///   and then convert the given value based on column type value. So I think
+  ///   we need to kind of get column metadata first and then convert based on
+  ///   column spec
   /// * Refactor multiple .map on clis
   /// * Can we not spawn a new thread to just run it?
   /// * Need to apply the inserts on target db
@@ -90,7 +109,7 @@ impl DbCli {
     schema: Option<String>,
     table: Option<String>,
     column: Option<String>,
-    values: Option<String>,
+    values: Vec<String>,
     config: Config,
     logger: Logger,
   ) -> ResultAnyError<()> {
@@ -99,11 +118,6 @@ impl DbCli {
     let schema: String = schema.or(Some("public".to_owned())).unwrap();
     let table: String = table.unwrap();
     let column: String = column.or(Some("id".to_owned())).unwrap();
-    let values: Vec<String> = values
-      .unwrap()
-      .split(',')
-      .map(|val| val.trim().to_owned())
-      .collect();
 
     let db_by_name: HashMap<String, DbConfig> = config
       .db_by_name
