@@ -144,13 +144,15 @@ impl DbCli {
 
       let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(psql);
 
-      let psql_table_by_name = relation_fetcher.load_table_structure(Option::None).unwrap();
+      let psql_table_by_name = relation_fetcher
+        .load_table_structure(schema.clone())
+        .unwrap();
 
-      let input = psql::relation_fetcher::FetchRowInput {
-        schema: Some(&schema),
+      let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
+        schema: &schema,
         table_name: &table,
         column_name: &column,
-        column_value: Box::new(values.get(0).unwrap().clone()), // As of now only supports 1 value
+        column_value: values.get(0).unwrap(), // As of now only supports 1 value
       };
 
       let mut trees = relation_fetcher

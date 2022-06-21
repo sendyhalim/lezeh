@@ -65,10 +65,7 @@ pub struct Query {
 }
 
 impl Query {
-  pub fn fetch_fk_info(
-    &mut self,
-    _schema: Option<String>,
-  ) -> ResultAnyError<Vec<ForeignKeyInformationRow>> {
+  fn fetch_fk_info(&mut self, _schema: String) -> ResultAnyError<Vec<ForeignKeyInformationRow>> {
     // First try to build the UML for all of the tables
     // we'll query from psql information_schema tables.
     let rows: Vec<Row> = self.connection.get().query(TABLE_WITH_FK_QUERY, &[])?;
@@ -93,7 +90,7 @@ impl Query {
     return Ok(fk_info_rows);
   }
 
-  pub fn get_table_by_name<'a, 'b>(&'a mut self) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
+  fn get_table_by_name<'a, 'b>(&'a mut self) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
     let rows: Vec<Row> = self.connection.get().query(
       "
       SELECT
@@ -152,6 +149,34 @@ impl Query {
       .query(&statement, &[input.column_value.as_ref()])
       .map_err(anyhow::Error::from);
   }
+
+  fn get_column(
+    &mut self,
+    schema: &str,
+    table_name: &str,
+    column_name: &str,
+  ) -> ResultAnyError<Option<PsqlTableColumn>> {
+    let query_str =
+      "SELECT * FROM information_schema.columns where table_schema = $1 and table_name = $2 and column_name = $3";
+
+    let connection = self.connection.get();
+    let statement = connection.prepare(&query_str)?;
+
+    let row = connection
+      .query_one(
+        &statement,
+        &[
+          &schema.to_string(),
+          &table_name.to_string(),
+          &column_name.to_string(),
+        ],
+      )
+      .map_err(anyhow::Error::from)?;
+
+    let column = PsqlTableColumn::new(column_name.to_string(), row.get("data_type"));
+
+    return Ok(Some(column));
+  }
 }
 
 pub struct RelationFetcher {
@@ -168,11 +193,34 @@ impl RelationFetcher {
   }
 }
 
+pub struct FetchRowsAsRoseTreeInput<'a> {
+  pub schema: &'a str,
+  pub table_name: &'a str,
+  pub column_name: &'a str,
+  pub column_value: &'a str,
+}
+
 pub struct FetchRowInput<'a> {
-  pub schema: Option<&'a str>,
+  pub schema: &'a str,
   pub table_name: &'a str,
   pub column_name: &'a str,
   pub column_value: PsqlParamValue,
+}
+
+impl<'b> FetchRowInput<'b> {
+  fn psql_param_value<'a>(
+    column_value: String,
+    column: PsqlTableColumn<'a>,
+  ) -> ResultAnyError<PsqlParamValue> {
+    let data_type: String = column.data_type.to_string();
+    let mut value: PsqlParamValue = Box::new(column_value.clone());
+
+    if data_type == "integer" {
+      value = Box::new(column_value.clone().parse::<i32>()?);
+    }
+
+    return Ok(value);
+  }
 }
 
 impl RelationFetcher {
@@ -190,7 +238,7 @@ impl RelationFetcher {
 
   pub fn load_table_structure<'a, 'b>(
     &'a mut self,
-    schema: Option<String>,
+    schema: String,
   ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
     let fk_info_rows = self.query.fetch_fk_info(schema)?;
 
@@ -222,7 +270,7 @@ impl RelationFetcher {
 
   pub fn fetch_rose_trees_to_be_inserted<'a>(
     &mut self,
-    input: &'a FetchRowInput,
+    input: &'a FetchRowsAsRoseTreeInput,
     psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
   ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRows<'a>>>> {
     let psql_table = psql_table_by_name.get(&input.table_name.to_string());
@@ -231,7 +279,21 @@ impl RelationFetcher {
       return Ok(vec![]);
     }
 
-    let row: Row = self.find_one_row(input)?.ok_or_else(|| {
+    let column: PsqlTableColumn = self
+      .query
+      .get_column(input.schema, input.table_name, input.column_name)?
+      .ok_or(anyhow!("Could not find column {}", input.column_name))?;
+
+    let mut find_root_input = input.clone();
+
+    let fetch_row_input = FetchRowInput {
+      schema: input.schema,
+      table_name: input.table_name,
+      column_name: input.column_name,
+      column_value: FetchRowInput::psql_param_value(input.column_value.to_string(), column)?,
+    };
+
+    let row: Row = self.find_one_row(&fetch_row_input)?.ok_or_else(|| {
       anyhow!(
         "Could not find row {} {:#?} in table {}",
         input.column_name,
@@ -434,7 +496,7 @@ impl RelationFetcher {
     id: PsqlParamValue,
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     let rows = self.query.find_rows(&FetchRowInput {
-      schema: Some(table.schema.as_ref()),
+      schema: table.schema.as_ref(),
       table_name: table.name.as_ref(),
       column_name,
       column_value: id,
