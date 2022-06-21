@@ -217,6 +217,10 @@ impl<'b> FetchRowInput<'b> {
 
     if data_type == "integer" {
       value = Box::new(column_value.clone().parse::<i32>()?);
+    } else if data_type == "uuid" {
+      let uuid = Uuid::from_str(&column_value)?;
+
+      value = Box::new(uuid);
     }
 
     return Ok(value);
