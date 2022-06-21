@@ -9,6 +9,8 @@ use postgres::types::FromSql;
 use postgres::types::ToSql;
 use postgres::Row;
 
+use crate::common::types::ResultAnyError;
+
 type AnyString<'a> = Cow<'a, str>;
 
 #[derive(PartialEq, Hash, Eq, Debug, Clone)]
@@ -112,6 +114,17 @@ impl<'a> Hash for PsqlTableRows<'a> {
 #[derive(Debug)]
 pub struct Uuid {
   bytes: [u8; 16],
+}
+
+impl Uuid {
+  pub fn from_bytes(bytes: [u8; 16]) -> Self {
+    return Uuid { bytes };
+  }
+
+  pub fn from_str(val: &str) -> ResultAnyError<Self> {
+    // Use uuid::* package to ease some uuid operations
+    return Ok(Uuid::from_bytes(*uuid::Uuid::parse_str(val)?.as_bytes()));
+  }
 }
 
 impl ToSql for Uuid {
