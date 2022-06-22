@@ -85,8 +85,6 @@ impl Config {
       config.deployment.merge_feature_branches = Some(Default::default());
     }
 
-    println!("{:#?}", config);
-
     return Ok(config);
   }
 }
