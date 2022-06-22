@@ -22,16 +22,20 @@ impl RelationInsert {
       .flat_map(|level| {
         let rows: &HashSet<PsqlTableRows> = rows_by_level.get(level).unwrap();
 
-        return rows
-          .iter()
-          .map(|psql_table_row| {
-            return RelationInsert::table_row_into_insert_statement(psql_table_row);
-          })
-          .collect::<Vec<String>>();
+        return RelationInsert::table_rows_into_insert_statement(rows);
       })
       .collect();
 
     return statements;
+  }
+
+  pub fn table_rows_into_insert_statement(rows: &HashSet<PsqlTableRows>) -> Vec<String> {
+    return rows
+      .iter()
+      .map(|psql_table_row| {
+        return RelationInsert::table_row_into_insert_statement(psql_table_row);
+      })
+      .collect::<Vec<String>>();
   }
 
   pub fn table_row_into_insert_statement(table_row: &PsqlTableRows) -> String {
