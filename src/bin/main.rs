@@ -1,13 +1,4 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-
 use clap::App as Cli;
-use clap::Arg;
-use clap::ArgMatches;
-
-use lib::common::rose_tree::RoseTreeNode;
-use lib::db::psql;
-use lib::db::psql::dto::PsqlTableRows;
 
 use lib::common::config::Config;
 use lib::common::types::ResultAnyError;
