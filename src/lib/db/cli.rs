@@ -159,18 +159,25 @@ impl DbCli {
         .fetch_rose_trees_to_be_inserted(&input, &psql_table_by_name)
         .unwrap();
 
+      // As of now only support 1 row
       let tree: RoseTreeNode<psql::dto::PsqlTableRows> = trees.remove(0);
-      println!("tree {:#?}", tree);
 
-      let mut parents_by_level: HashMap<i32, HashSet<_>> =
-        RoseTreeNode::parents_by_level(tree.clone());
-      let children_by_level: HashMap<i32, HashSet<_>> =
-        RoseTreeNode::children_by_level(tree, &mut parents_by_level);
+      let mut nodes_by_level: HashMap<i32, HashSet<_>> = Default::default();
 
-      println!("{:#?}", parents_by_level);
-      println!("{:#?}", children_by_level);
+      // Prefill current rows
+      let mut current_level_rows: HashSet<psql::dto::PsqlTableRows> = Default::default();
+      current_level_rows.insert(tree.value.clone());
+      nodes_by_level.insert(0, current_level_rows);
+
+      // Populate parents
+      nodes_by_level.extend(RoseTreeNode::parents_by_level(tree.clone()));
+
+      // Populate children
+      let children_by_level = RoseTreeNode::children_by_level(tree.clone(), &mut nodes_by_level);
+      nodes_by_level.extend(children_by_level);
+
       let statements: Vec<String> =
-        psql::relation_insert::RelationInsert::into_insert_statements(parents_by_level);
+        psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level);
 
       println!("{:#?}", statements);
     });
