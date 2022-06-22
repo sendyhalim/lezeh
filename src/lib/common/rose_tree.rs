@@ -85,10 +85,6 @@ where
     return ps_by_level;
   }
 
-  pub fn rose_tree_to_vec(rose_tree: RoseTreeNode<T>) {
-    let parents = RoseTreeNode::parents_by_level(rose_tree);
-  }
-
   pub fn children_by_level(
     node: RoseTreeNode<T>,
     parents_by_level: &mut HashMap<i32, HashSet<T>>,
