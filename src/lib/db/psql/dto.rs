@@ -176,3 +176,53 @@ impl ToString for Uuid {
     // return String::from_utf8_lossy(&self.bytes).to_string();
   }
 }
+
+#[cfg(test)]
+mod test {
+  use super::*;
+
+  mod uuid {
+    use super::*;
+
+    mod from_str {
+      use super::*;
+
+      #[test]
+      fn it_should_create_uuid_instance() -> ResultAnyError<()> {
+        let uuid_str: &str = "83166f85-d37a-4fe7-a0f6-ad5103d03f8a";
+
+        let parsed: ResultAnyError<Uuid> = Uuid::from_str(uuid_str);
+
+        assert!(parsed.is_ok());
+        assert_eq!(parsed?.to_string(), uuid_str);
+
+        return Ok(());
+      }
+    }
+
+    mod from_sql {
+      use super::*;
+
+      #[test]
+      fn it_should_create_from_sql_bytes() -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
+        let ty: postgres_types::Type = postgres_types::Type::UUID;
+
+        // Online uuid to bytes converter:
+        // https://yupana-engineering.com/online-uuid-to-c-array-converter
+        let bytes: Vec<u8> = vec![
+          0x83, 0x16, 0x6f, 0x85, 0xd3, 0x7a, 0x4f, 0xe7, 0xa0, 0xf6, 0xad, 0x51, 0x03, 0xd0, 0x3f,
+          0x8a,
+        ];
+
+        let parsed_uuid: Uuid = Uuid::from_sql(&ty, &bytes)?;
+
+        assert_eq!(
+          parsed_uuid.to_string(),
+          "83166f85-d37a-4fe7-a0f6-ad5103d03f8a"
+        );
+
+        return Ok(());
+      }
+    }
+  }
+}
