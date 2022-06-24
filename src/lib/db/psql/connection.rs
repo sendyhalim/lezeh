@@ -19,7 +19,14 @@ impl PsqlConnection {
     return Ok(PsqlConnection {
       client: PsqlConfig::new()
         .user(&creds.username)
-        // .password(creds.password.as_ref().unwrap()) // Should defaults to empty binary
+        .password(
+          creds
+            .password
+            .as_ref()
+            .or(Some(&String::from("")))
+            .as_ref()
+            .unwrap(),
+        )
         .host(&creds.host)
         .dbname(&creds.database_name)
         .connect(postgres::NoTls)?,
