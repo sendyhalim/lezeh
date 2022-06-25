@@ -133,6 +133,7 @@ impl DbCli {
       .ok_or_else(|| anyhow!("Target db {} is not registered", target_db))?
       .clone();
 
+    // TODO: Use tokio postgres
     let handle = std::thread::spawn(move || {
       let psql = psql::connection::PsqlConnection::new(&psql::connection::PsqlCreds {
         host: source_db_config.host.clone(),
@@ -155,9 +156,14 @@ impl DbCli {
         column_value: values.get(0).unwrap(), // As of now only supports 1 value
       };
 
-      let mut trees = relation_fetcher
-        .fetch_rose_trees_to_be_inserted(&input, &psql_table_by_name)
-        .unwrap();
+      let trees = relation_fetcher.fetch_rose_trees_to_be_inserted(&input, &psql_table_by_name);
+
+      if trees.is_err() {
+        println!("{}", trees.err().unwrap());
+        return;
+      }
+
+      let mut trees = trees.unwrap();
 
       // As of now only support 1 row
       let tree: RoseTreeNode<psql::dto::PsqlTableRows> = trees.remove(0);
