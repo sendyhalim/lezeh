@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use postgres::types::ToSql;
 use postgres::Row;
+use thiserror::Error;
 
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
@@ -62,6 +63,22 @@ pub struct ForeignKeyInformationRow {
 
 pub struct Query {
   connection: PsqlConnection,
+}
+
+#[derive(Error, Debug)]
+pub enum QueryError {
+  #[error("Row with column {column} = {identifier} is not found in table {table_name}")]
+  RowNotFound {
+    table_name: String,
+    column: String,
+    identifier: String,
+  },
+
+  #[error("Too many rows returned({row_count}), expecting only {expected_row_count}")]
+  TooManyRows {
+    row_count: usize,
+    expected_row_count: usize,
+  },
 }
 
 impl Query {
@@ -260,7 +277,10 @@ impl RelationFetcher {
       Err(any) => Err(any),
       Ok(mut rows) => {
         if rows.len() > 1 {
-          return Err(anyhow!("Too many rows returned {:?}", rows));
+          return Err(anyhow!(QueryError::TooManyRows {
+            row_count: rows.len(),
+            expected_row_count: 1,
+          }));
         }
 
         if rows.len() == 0 {
@@ -288,8 +308,6 @@ impl RelationFetcher {
       .get_column(input.schema, input.table_name, input.column_name)?
       .ok_or(anyhow!("Could not find column {}", input.column_name))?;
 
-    let mut find_root_input = input.clone();
-
     let fetch_row_input = FetchRowInput {
       schema: input.schema,
       table_name: input.table_name,
@@ -298,12 +316,11 @@ impl RelationFetcher {
     };
 
     let row: Row = self.find_one_row(&fetch_row_input)?.ok_or_else(|| {
-      anyhow!(
-        "Could not find row {} {:#?} in table {}",
-        input.column_name,
-        input.column_value,
-        input.table_name
-      )
+      anyhow!(QueryError::RowNotFound {
+        table_name: input.table_name.into(),
+        column: input.column_name.into(),
+        identifier: input.column_value.into()
+      })
     })?;
 
     let row: Rc<Row> = Rc::new(row);
