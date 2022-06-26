@@ -69,7 +69,7 @@ impl DbCli {
       );
   }
 
-  pub async fn run(cli: &ArgMatches<'_>, config: Config, logger: Logger) -> ResultAnyError<()> {
+  pub fn run(cli: &ArgMatches<'_>, config: Config, logger: Logger) -> ResultAnyError<()> {
     match cli.subcommand() {
       ("cherry-pick", Some(cherry_pick_cli)) => {
         let values: Vec<String> = cherry_pick_cli
@@ -133,62 +133,57 @@ impl DbCli {
       .ok_or_else(|| anyhow!("Target db {} is not registered", target_db))?
       .clone();
 
-    // TODO: Use tokio postgres
-    let handle = std::thread::spawn(move || {
-      let psql = psql::connection::PsqlConnection::new(&psql::connection::PsqlCreds {
-        host: source_db_config.host.clone(),
-        database_name: source_db_config.database.clone(),
-        username: source_db_config.username.clone(),
-        password: source_db_config.password.clone(),
-      })
+    let psql = psql::connection::PsqlConnection::new(&psql::connection::PsqlCreds {
+      host: source_db_config.host.clone(),
+      database_name: source_db_config.database.clone(),
+      username: source_db_config.username.clone(),
+      password: source_db_config.password.clone(),
+    })
+    .unwrap();
+
+    let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(psql);
+
+    let psql_table_by_name = relation_fetcher
+      .load_table_structure(schema.clone())
       .unwrap();
 
-      let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(psql);
+    let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
+      schema: &schema,
+      table_name: &table,
+      column_name: &column,
+      column_value: values.get(0).unwrap(), // As of now only supports 1 value
+    };
 
-      let psql_table_by_name = relation_fetcher
-        .load_table_structure(schema.clone())
-        .unwrap();
+    let trees = relation_fetcher.fetch_rose_trees_to_be_inserted(&input, &psql_table_by_name);
 
-      let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
-        schema: &schema,
-        table_name: &table,
-        column_name: &column,
-        column_value: values.get(0).unwrap(), // As of now only supports 1 value
-      };
+    if trees.is_err() {
+      println!("{}", trees.unwrap_err());
+      return Ok(());
+    }
 
-      let trees = relation_fetcher.fetch_rose_trees_to_be_inserted(&input, &psql_table_by_name);
+    let mut trees = trees?;
 
-      if trees.is_err() {
-        println!("{}", trees.err().unwrap());
-        return;
-      }
+    // As of now only support 1 row
+    let tree: RoseTreeNode<psql::dto::PsqlTableRows> = trees.remove(0);
 
-      let mut trees = trees.unwrap();
+    let mut nodes_by_level: HashMap<i32, HashSet<_>> = Default::default();
 
-      // As of now only support 1 row
-      let tree: RoseTreeNode<psql::dto::PsqlTableRows> = trees.remove(0);
+    // Prefill current rows
+    let mut current_level_rows: HashSet<psql::dto::PsqlTableRows> = Default::default();
+    current_level_rows.insert(tree.value.clone());
+    nodes_by_level.insert(0, current_level_rows);
 
-      let mut nodes_by_level: HashMap<i32, HashSet<_>> = Default::default();
+    // Populate parents
+    nodes_by_level.extend(RoseTreeNode::parents_by_level(tree.clone()));
 
-      // Prefill current rows
-      let mut current_level_rows: HashSet<psql::dto::PsqlTableRows> = Default::default();
-      current_level_rows.insert(tree.value.clone());
-      nodes_by_level.insert(0, current_level_rows);
+    // Populate children
+    let children_by_level = RoseTreeNode::children_by_level(tree.clone(), &mut nodes_by_level);
+    nodes_by_level.extend(children_by_level);
 
-      // Populate parents
-      nodes_by_level.extend(RoseTreeNode::parents_by_level(tree.clone()));
+    let statements: Vec<String> =
+      psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level);
 
-      // Populate children
-      let children_by_level = RoseTreeNode::children_by_level(tree.clone(), &mut nodes_by_level);
-      nodes_by_level.extend(children_by_level);
-
-      let statements: Vec<String> =
-        psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level);
-
-      println!("{:#?}", statements);
-    });
-
-    handle.join().unwrap();
+    println!("{:#?}", statements);
 
     return Ok(());
   }

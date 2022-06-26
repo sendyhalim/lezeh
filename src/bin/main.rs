@@ -44,7 +44,10 @@ async fn main() -> ResultAnyError<()> {
   match cli.subcommand() {
     ("deployment", Some(cli)) => DeploymentCli::run(cli, config, logger).await?,
     ("url", Some(url_cli)) => UrlCli::run(url_cli, config).await?,
-    ("db", Some(db_cli)) => DbCli::run(db_cli, config, logger).await?,
+    ("db", Some(db_cli)) => {
+      let db_cli = db_cli.clone();
+      return tokio::task::spawn_blocking(move || DbCli::run(&db_cli, config, logger)).await?;
+    }
     _ => {}
   }
 
