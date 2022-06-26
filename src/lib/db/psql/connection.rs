@@ -3,6 +3,12 @@ use postgres::Client as PsqlClient;
 
 use crate::common::types::ResultAnyError;
 
+#[derive(thiserror::Error, Debug)]
+pub enum PsqlConnectionError {
+  #[error("Error when initialization connection {0}")]
+  InitializeConnectionError(String),
+}
+
 pub struct PsqlConnection {
   client: PsqlClient,
 }
@@ -29,7 +35,10 @@ impl PsqlConnection {
         )
         .host(&creds.host)
         .dbname(&creds.database_name)
-        .connect(postgres::NoTls)?,
+        .connect(postgres::NoTls)
+        .map_err(|err| {
+          return PsqlConnectionError::InitializeConnectionError(err.to_string());
+        })?,
     });
   }
 }

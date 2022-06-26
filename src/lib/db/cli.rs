@@ -138,8 +138,7 @@ impl DbCli {
       database_name: source_db_config.database.clone(),
       username: source_db_config.username.clone(),
       password: source_db_config.password.clone(),
-    })
-    .unwrap();
+    })?;
 
     let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(psql);
 
