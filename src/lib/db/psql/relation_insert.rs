@@ -46,7 +46,7 @@ impl RelationInsert {
       .iter()
       .map(|c| String::from(c.name()))
       .collect::<Vec<String>>()
-      .join(",");
+      .join(", ");
 
     let values: String = rows
       .iter()
@@ -59,7 +59,7 @@ impl RelationInsert {
             return format!("{}", sink.to_string_for_statement());
           })
           .collect::<Vec<String>>()
-          .join(",");
+          .join(", ");
 
         return format!("({})", row_values_str);
       })
