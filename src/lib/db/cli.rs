@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use anyhow::anyhow;
 use clap::App as Cli;
@@ -13,6 +15,7 @@ use crate::common::config::DbConfig;
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 use crate::db::psql;
+use crate::db::psql::table_metadata::TableMetadata;
 
 pub struct DbCli {}
 
@@ -140,11 +143,11 @@ impl DbCli {
       password: source_db_config.password.clone(),
     })?;
 
-    let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(psql);
+    let mut table_metadata = TableMetadata::new(Rc::new(RefCell::new(psql)));
+    let psql_table_by_name = table_metadata.load_table_structure(schema.clone())?;
 
-    let psql_table_by_name = relation_fetcher
-      .load_table_structure(schema.clone())
-      .unwrap();
+    let mut relation_fetcher =
+      psql::relation_fetcher::RelationFetcher::new(Rc::new(RefCell::new(table_metadata)));
 
     let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
       schema: &schema,
