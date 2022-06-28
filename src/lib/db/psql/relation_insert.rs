@@ -1,11 +1,14 @@
-use crate::db::psql::dto::PsqlTableRows;
-use crate::db::psql::dto::Uuid;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use postgres::row::Row;
 use postgres::types::FromSql;
 use postgres::Column;
 use postgres_types::Type as PsqlType;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+
+use crate::db::psql::dto::PsqlTableRows;
+use crate::db::psql::dto::Uuid;
 
 pub struct RelationInsert {}
 
@@ -107,8 +110,6 @@ impl<'a> FromSql<'a> for FromSqlSink {
 
 impl FromSqlSink {
   pub fn enclosed_statement_string_value(&self, enclosing_val: &str) -> String {
-    // println!("STRING VALUE OF type {:?} {:#?}", self.ty, self.raw);
-
     return format!(
       "{}{}{}",
       enclosing_val,
@@ -125,12 +126,6 @@ impl FromSqlSink {
     let ty: &PsqlType = self.ty.as_ref().unwrap();
 
     return match *ty {
-      PsqlType::VARCHAR
-      | PsqlType::TEXT
-      | PsqlType::BPCHAR
-      | PsqlType::NAME
-      | PsqlType::UNKNOWN => self.enclosed_statement_string_value("'"),
-
       ref ty if ty.name() == "citext" => self.enclosed_statement_string_value("'"),
 
       PsqlType::BOOL => postgres_protocol::types::bool_from_sql(&self.raw[..])
@@ -149,9 +144,21 @@ impl FromSqlSink {
         .unwrap()
         .to_string(),
 
-      PsqlType::TIMESTAMP => postgres_protocol::types::timestamp_from_sql(&self.raw[..])
-        .unwrap()
-        .to_string(),
+      PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
+        // TODO: Still broken
+        let unix_timestamp = postgres_protocol::types::timestamp_from_sql(&self.raw[..]).unwrap();
+
+        let unix_timestamp_in_ms: String = unix_timestamp.to_string();
+
+        let secs = unix_timestamp_in_ms[..unix_timestamp_in_ms.len() - 6].parse();
+        let microsecs = unix_timestamp_in_ms[unix_timestamp_in_ms.len() - 6..].parse::<u32>();
+        let parsed = match (secs, microsecs) {
+          (Ok(s), Ok(us)) => NaiveDateTime::from_timestamp_opt(s, us),
+          _ => None,
+        };
+
+        return parsed.unwrap().to_string();
+      }
 
       PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&ty, &self.raw)
         .unwrap()
@@ -161,7 +168,7 @@ impl FromSqlSink {
         return format!("'{}'", Uuid::from_sql(ty, &self.raw).unwrap().to_string());
       }
 
-      _ => String::from_utf8_lossy(&self.raw[..]).to_string(),
+      _ => self.enclosed_statement_string_value("'"),
     };
   }
 }
