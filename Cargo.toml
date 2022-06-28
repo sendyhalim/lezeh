@@ -17,6 +17,7 @@ license = "MIT"
 
 [dependencies]
 clap = { version = "2.33" }
+chrono = { version = "0.4" }
 env_logger = { version = "0.7" }
 fake = { version = "2.2", features = ["derive", "chrono"] }
 futures = { version = "0.3" }
