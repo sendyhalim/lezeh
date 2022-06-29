@@ -144,6 +144,12 @@ impl FromSqlSink {
         .unwrap()
         .to_string(),
 
+      PsqlType::DATE => {
+        return postgres_protocol::types::date_from_sql(&self.raw[..])
+          .unwrap()
+          .to_string();
+      }
+
       PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
         // TODO: Still broken
         let unix_timestamp = postgres_protocol::types::timestamp_from_sql(&self.raw[..]).unwrap();
