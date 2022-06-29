@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{NaiveDate, NaiveDateTime};
 use postgres::row::Row;
 use postgres::types::FromSql;
 use postgres::Column;
@@ -109,6 +109,13 @@ impl<'a> FromSql<'a> for FromSqlSink {
 }
 
 impl FromSqlSink {
+  pub fn value_to_enclosed_string<T>(val: T) -> String
+  where
+    T: ToString,
+  {
+    return format!("'{}'", val.to_string());
+  }
+
   pub fn enclosed_statement_string_value(&self, enclosing_val: &str) -> String {
     return format!(
       "{}{}{}",
@@ -145,25 +152,15 @@ impl FromSqlSink {
         .to_string(),
 
       PsqlType::DATE => {
-        return postgres_protocol::types::date_from_sql(&self.raw[..])
-          .unwrap()
-          .to_string();
+        return FromSqlSink::value_to_enclosed_string(
+          NaiveDate::from_sql(ty, &self.raw[..]).unwrap(),
+        );
       }
 
       PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
-        // TODO: Still broken
-        let unix_timestamp = postgres_protocol::types::timestamp_from_sql(&self.raw[..]).unwrap();
-
-        let unix_timestamp_in_ms: String = unix_timestamp.to_string();
-
-        let secs = unix_timestamp_in_ms[..unix_timestamp_in_ms.len() - 6].parse();
-        let microsecs = unix_timestamp_in_ms[unix_timestamp_in_ms.len() - 6..].parse::<u32>();
-        let parsed = match (secs, microsecs) {
-          (Ok(s), Ok(us)) => NaiveDateTime::from_timestamp_opt(s, us),
-          _ => None,
-        };
-
-        return parsed.unwrap().to_string();
+        return FromSqlSink::value_to_enclosed_string(
+          NaiveDateTime::from_sql(ty, &self.raw[..]).unwrap(),
+        );
       }
 
       PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&ty, &self.raw)
