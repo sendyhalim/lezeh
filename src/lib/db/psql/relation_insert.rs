@@ -151,6 +151,7 @@ impl FromSqlSink {
         .unwrap()
         .to_string(),
 
+      // https://github.com/sfackler/rust-postgres/blob/master/postgres-types/src/chrono_04.rs
       PsqlType::DATE => {
         return FromSqlSink::value_to_enclosed_string(
           NaiveDate::from_sql(ty, &self.raw[..]).unwrap(),
