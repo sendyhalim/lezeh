@@ -38,8 +38,7 @@ slog-term = { version = "2.6.0" }
 tokio = { version = "1" , features = ["full"]}
 url = { version = "2.2.1" }
 urlshortener = { version = "3.0.0" }
-diesel = { version = "1.4", features = ["postgres"] }
-itertools = { version = "0.10.1" }
+itertools = { version = "0.10" }
 postgres = { version = "0.19", features = ["with-chrono-0_4"] }
 postgres-types = { version = "0.2.3" }
 postgres-protocol = { version = "0.6.4" }

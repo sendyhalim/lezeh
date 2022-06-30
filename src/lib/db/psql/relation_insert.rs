@@ -7,6 +7,7 @@ use postgres::types::FromSql;
 use postgres::Column;
 use postgres_types::Type as PsqlType;
 
+use crate::common::types::ResultAnyError;
 use crate::db::psql::dto::PsqlTableRows;
 use crate::db::psql::dto::Uuid;
 
@@ -15,33 +16,35 @@ pub struct RelationInsert {}
 impl RelationInsert {
   pub fn into_insert_statements(
     rows_by_level: HashMap<i32, HashSet<PsqlTableRows>>,
-  ) -> Vec<String> {
+  ) -> ResultAnyError<Vec<String>> {
     let mut levels: Vec<&i32> = rows_by_level.keys().collect();
 
     levels.sort();
 
-    let statements: Vec<String> = levels
+    let insert_statements: ResultAnyError<Vec<Vec<String>>> = levels
       .iter()
-      .flat_map(|level| {
+      .map(|level| {
         let rows: &HashSet<PsqlTableRows> = rows_by_level.get(level).unwrap();
 
         return RelationInsert::table_rows_into_insert_statement(rows);
       })
       .collect();
 
-    return statements;
+    return Ok(insert_statements?.into_iter().flatten().collect());
   }
 
-  pub fn table_rows_into_insert_statement(rows: &HashSet<PsqlTableRows>) -> Vec<String> {
+  pub fn table_rows_into_insert_statement(
+    rows: &HashSet<PsqlTableRows>,
+  ) -> ResultAnyError<Vec<String>> {
     return rows
       .iter()
       .map(|psql_table_row| {
         return RelationInsert::table_row_into_insert_statement(psql_table_row);
       })
-      .collect::<Vec<String>>();
+      .collect::<ResultAnyError<Vec<String>>>();
   }
 
-  pub fn table_row_into_insert_statement(table_row: &PsqlTableRows) -> String {
+  pub fn table_row_into_insert_statement(table_row: &PsqlTableRows) -> ResultAnyError<String> {
     let rows: &Vec<Rc<Row>> = &table_row.rows;
     let first_row: Rc<Row> = rows.get(0).unwrap().clone();
     let columns: &[Column] = first_row.columns(); // Slice
@@ -54,25 +57,23 @@ impl RelationInsert {
     let values: String = rows
       .iter()
       .map(|row| {
-        let row_values_str = columns
+        return columns
           .iter()
           .map(|c| {
             let sink: FromSqlSink = row.get::<'_, _, FromSqlSink>(c.name());
 
-            return format!("{}", sink.to_string_for_statement());
+            return sink.to_string_for_statement();
           })
-          .collect::<Vec<String>>()
-          .join(", ");
-
-        return format!("({})", row_values_str);
+          .collect::<ResultAnyError<Vec<String>>>()
+          .map(|val| format!("({})", val.join(", ")));
       })
-      .collect::<Vec<String>>()
+      .collect::<ResultAnyError<Vec<String>>>()?
       .join(",");
 
-    return format!(
+    return Ok(format!(
       "insert into {} ({}) VALUES {}",
       table_row.table.name, column_string, values
-    );
+    ));
   }
 }
 
@@ -116,18 +117,17 @@ impl FromSqlSink {
     return format!("'{}'", val.to_string());
   }
 
-  pub fn enclosed_statement_string_value(&self, enclosing_val: &str) -> String {
-    return format!(
-      "{}{}{}",
-      enclosing_val,
-      postgres_protocol::types::text_from_sql(&self.raw[..]).unwrap(),
-      enclosing_val,
-    );
+  pub fn enclosed_statement_string_value(&self, enclosing_val: &str) -> ResultAnyError<String> {
+    return postgres_protocol::types::text_from_sql(&self.raw[..])
+      .map(|val| {
+        return format!("{}{}{}", enclosing_val, val, enclosing_val,);
+      })
+      .map_err(anyhow::Error::msg);
   }
 
-  pub fn to_string_for_statement(&self) -> String {
+  pub fn to_string_for_statement(&self) -> ResultAnyError<String> {
     if self.ty.is_none() {
-      return "null".into();
+      return Ok("null".into());
     }
 
     let ty: &PsqlType = self.ty.as_ref().unwrap();
@@ -136,40 +136,44 @@ impl FromSqlSink {
       ref ty if ty.name() == "citext" => self.enclosed_statement_string_value("'"),
 
       PsqlType::BOOL => postgres_protocol::types::bool_from_sql(&self.raw[..])
-        .unwrap()
-        .to_string(),
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
 
       PsqlType::INT4 => postgres_protocol::types::int4_from_sql(&self.raw[..])
-        .unwrap()
-        .to_string(),
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
 
       PsqlType::INT2 => postgres_protocol::types::int2_from_sql(&self.raw[..])
-        .unwrap()
-        .to_string(),
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
 
       PsqlType::INT8 => postgres_protocol::types::int8_from_sql(&self.raw[..])
-        .unwrap()
-        .to_string(),
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
 
       // https://github.com/sfackler/rust-postgres/blob/master/postgres-types/src/chrono_04.rs
       PsqlType::DATE => {
-        return FromSqlSink::value_to_enclosed_string(
-          NaiveDate::from_sql(ty, &self.raw[..]).unwrap(),
-        );
+        return NaiveDate::from_sql(ty, &self.raw[..])
+          .map(FromSqlSink::value_to_enclosed_string)
+          .map_err(anyhow::Error::msg);
       }
 
       PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
-        return FromSqlSink::value_to_enclosed_string(
-          NaiveDateTime::from_sql(ty, &self.raw[..]).unwrap(),
-        );
+        return NaiveDateTime::from_sql(ty, &self.raw[..])
+          .map(FromSqlSink::value_to_enclosed_string)
+          .map_err(anyhow::Error::msg);
       }
 
       PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&ty, &self.raw)
-        .unwrap()
-        .to_string(),
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
 
       PsqlType::UUID => {
-        return format!("'{}'", Uuid::from_sql(ty, &self.raw).unwrap().to_string());
+        return Uuid::from_sql(ty, &self.raw)
+          .map(|val| {
+            return format!("'{}'", val.to_string());
+          })
+          .map_err(anyhow::Error::msg);
       }
 
       _ => self.enclosed_statement_string_value("'"),
