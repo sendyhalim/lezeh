@@ -109,7 +109,7 @@ impl<'b> FetchRowInput<'b> {
 }
 
 impl Query {
-  fn fetch_fk_info(&mut self, _schema: String) -> ResultAnyError<Vec<ForeignKeyInformationRow>> {
+  fn fetch_fk_info(&mut self, _schema: &str) -> ResultAnyError<Vec<ForeignKeyInformationRow>> {
     // First try to build the UML for all of the tables
     // we'll query from psql information_schema tables.
     let rows: Vec<Row> = self
@@ -279,7 +279,7 @@ impl TableMetadata {
 
   pub fn load_table_structure<'a, 'b>(
     &'a mut self,
-    schema: String,
+    schema: &str,
   ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
     let fk_info_rows = self.query.fetch_fk_info(schema)?;
 

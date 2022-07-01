@@ -84,12 +84,12 @@ impl DbCli {
           .collect();
 
         return DbCli::cherry_pick(
-          cherry_pick_cli.value_of("source_db").map(|s| s.to_owned()),
-          cherry_pick_cli.value_of("target_db").map(|s| s.to_owned()),
-          cherry_pick_cli.value_of("schema").map(|s| s.to_owned()),
-          cherry_pick_cli.value_of("table").map(|s| s.to_owned()),
-          cherry_pick_cli.value_of("column").map(|s| s.to_owned()),
+          cherry_pick_cli.value_of("source_db").unwrap(),
+          cherry_pick_cli.value_of("target_db").unwrap(),
+          cherry_pick_cli.value_of("table").unwrap(),
           values,
+          cherry_pick_cli.value_of("column"),
+          cherry_pick_cli.value_of("schema"),
           config,
           logger,
         );
@@ -107,32 +107,29 @@ impl DbCli {
   /// * Can we not spawn a new thread to just run it?
   /// * Need to apply the inserts on target db
   pub fn cherry_pick<'a>(
-    source_db: Option<String>,
-    target_db: Option<String>,
-    schema: Option<String>,
-    table: Option<String>,
-    column: Option<String>,
+    source_db: &str,
+    target_db: &str,
+    table: &str,
     values: Vec<String>,
+    column: Option<&str>,
+    schema: Option<&str>,
     config: Config,
     logger: Logger,
   ) -> ResultAnyError<()> {
-    let source_db: String = source_db.unwrap();
-    let target_db: String = target_db.unwrap();
-    let schema: String = schema.or(Some("public".to_owned())).unwrap();
-    let table: String = table.unwrap();
-    let column: String = column.or(Some("id".to_owned())).unwrap();
+    let schema = schema.or(Some("public")).unwrap();
+    let column = column.or(Some("id")).unwrap();
 
     let db_by_name: HashMap<String, DbConfig> = config
       .db_by_name
       .ok_or_else(|| anyhow!("Db config is not set"))?;
 
     let source_db_config: DbConfig = db_by_name
-      .get(&source_db)
+      .get(source_db)
       .ok_or_else(|| anyhow!("Source db {} is not registered", source_db))?
       .clone();
 
     let target_db_config: DbConfig = db_by_name
-      .get(&target_db)
+      .get(target_db)
       .ok_or_else(|| anyhow!("Target db {} is not registered", target_db))?
       .clone();
 
@@ -144,7 +141,7 @@ impl DbCli {
     })?;
 
     let mut table_metadata = TableMetadata::new(Rc::new(RefCell::new(psql)));
-    let psql_table_by_name = table_metadata.load_table_structure(schema.clone())?;
+    let psql_table_by_name = table_metadata.load_table_structure(schema)?;
 
     let mut relation_fetcher =
       psql::relation_fetcher::RelationFetcher::new(Rc::new(RefCell::new(table_metadata)));
