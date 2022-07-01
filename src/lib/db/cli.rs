@@ -182,7 +182,7 @@ impl DbCli {
     let statements: Vec<String> =
       psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
 
-    println!("{:#?}", statements);
+    println!("{}", statements.join("\n"));
 
     return Ok(());
   }
