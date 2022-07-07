@@ -71,7 +71,7 @@ impl RelationInsert {
       .join(",");
 
     return Ok(format!(
-      "insert into {} ({}) VALUES {}",
+      "insert into {} ({}) VALUES {};",
       table_row.table.name, column_string, values
     ));
   }
@@ -110,19 +110,12 @@ impl<'a> FromSql<'a> for FromSqlSink {
 }
 
 impl FromSqlSink {
-  pub fn value_to_enclosed_string<T>(val: T) -> String
+  pub fn escape_string<T>(val: T) -> String
   where
     T: ToString,
   {
-    return format!("'{}'", val.to_string());
-  }
-
-  pub fn enclosed_statement_string_value(&self, enclosing_val: &str) -> ResultAnyError<String> {
-    return postgres_protocol::types::text_from_sql(&self.raw[..])
-      .map(|val| {
-        return format!("{}{}{}", enclosing_val, val, enclosing_val,);
-      })
-      .map_err(anyhow::Error::msg);
+    // https://github.com/sfackler/rust-postgres/pull/702
+    return postgres_protocol::escape::escape_literal(&val.to_string());
   }
 
   pub fn to_string_for_statement(&self) -> ResultAnyError<String> {
@@ -133,8 +126,6 @@ impl FromSqlSink {
     let ty: &PsqlType = self.ty.as_ref().unwrap();
 
     return match *ty {
-      ref ty if ty.name() == "citext" => self.enclosed_statement_string_value("'"),
-
       PsqlType::BOOL => postgres_protocol::types::bool_from_sql(&self.raw[..])
         .map(|val| val.to_string())
         .map_err(anyhow::Error::msg),
@@ -154,13 +145,13 @@ impl FromSqlSink {
       // https://github.com/sfackler/rust-postgres/blob/master/postgres-types/src/chrono_04.rs
       PsqlType::DATE => {
         return NaiveDate::from_sql(ty, &self.raw[..])
-          .map(FromSqlSink::value_to_enclosed_string)
+          .map(FromSqlSink::escape_string)
           .map_err(anyhow::Error::msg);
       }
 
       PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
         return NaiveDateTime::from_sql(ty, &self.raw[..])
-          .map(FromSqlSink::value_to_enclosed_string)
+          .map(FromSqlSink::escape_string)
           .map_err(anyhow::Error::msg);
       }
 
@@ -176,7 +167,9 @@ impl FromSqlSink {
           .map_err(anyhow::Error::msg);
       }
 
-      _ => self.enclosed_statement_string_value("'"),
+      _ => postgres_protocol::types::text_from_sql(&self.raw[..])
+        .map(FromSqlSink::escape_string)
+        .map_err(anyhow::Error::msg),
     };
   }
 }
