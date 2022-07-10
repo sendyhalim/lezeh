@@ -29,7 +29,7 @@ pub struct FetchRowsAsRoseTreeInput<'a> {
 impl RelationFetcher {
   pub fn fetch_rose_trees_to_be_inserted<'a>(
     &mut self,
-    input: &'a FetchRowsAsRoseTreeInput,
+    input: FetchRowsAsRoseTreeInput,
     psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
   ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRows<'a>>>> {
     let psql_table = psql_table_by_name.get(&input.table_name.to_string());
