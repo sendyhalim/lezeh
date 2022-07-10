@@ -135,6 +135,27 @@ where
 
     return children_by_level;
   }
+
+  /// Iterate to parents and children from the given node,
+  /// collecting all the relations (BFS-like) and return a hahsmap
+  /// where the key is the level of the hashset nodes.
+  pub fn nodes_by_level(node: RoseTreeNode<T>) -> HashMap<i32, HashSet<T>> {
+    let mut nodes_by_level: HashMap<i32, HashSet<_>> = Default::default();
+
+    // Prefill current rows
+    let mut current_level_rows: HashSet<T> = Default::default();
+    current_level_rows.insert(node.value.clone());
+    nodes_by_level.insert(0, current_level_rows);
+
+    // Populate parents
+    nodes_by_level.extend(RoseTreeNode::parents_by_level(node.clone()));
+
+    // Populate children
+    let children_by_level = RoseTreeNode::children_by_level(node.clone(), &mut nodes_by_level);
+    nodes_by_level.extend(children_by_level);
+
+    return nodes_by_level;
+  }
 }
 
 #[cfg(test)]
