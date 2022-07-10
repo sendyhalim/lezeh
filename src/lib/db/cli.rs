@@ -169,10 +169,10 @@ impl DbCli {
   pub fn fetch_snowflake_relation<'a>(
     psql: Rc<RefCell<PsqlConnection>>,
     psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
-    table: &'a str,
+    table: &str,
     values: Vec<String>,
-    column: &'a str,
-    schema: &'a str,
+    column: &str,
+    schema: &str,
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     let table_metadata = TableMetadata::new(psql);
     let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
