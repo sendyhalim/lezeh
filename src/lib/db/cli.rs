@@ -141,8 +141,7 @@ impl DbCli {
     };
 
     let psql = Rc::new(RefCell::new(PsqlConnection::new(&db_creds)?));
-
-    let mut db_metadata = DbMetadata::new(psql.clone());
+    let db_metadata = DbMetadata::new(psql.clone());
     let psql_table_by_name = db_metadata.load_table_structure(schema)?;
 
     let tree = DbCli::fetch_snowflake_relation(
@@ -176,8 +175,7 @@ impl DbCli {
     schema: &'a str,
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     let table_metadata = TableMetadata::new(psql);
-    let mut relation_fetcher =
-      psql::relation_fetcher::RelationFetcher::new(Rc::new(RefCell::new(table_metadata)));
+    let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
 
     let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
       schema: &schema,

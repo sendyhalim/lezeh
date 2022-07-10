@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -10,11 +9,11 @@ use crate::db::psql::dto::*;
 use crate::db::psql::table_metadata::{PsqlParamValue, RowUtil, TableMetadata};
 
 pub struct RelationFetcher {
-  table_metadata: Rc<RefCell<TableMetadata>>,
+  table_metadata: TableMetadata,
 }
 
 impl RelationFetcher {
-  pub fn new(table_metadata: Rc<RefCell<TableMetadata>>) -> RelationFetcher {
+  pub fn new(table_metadata: TableMetadata) -> RelationFetcher {
     return RelationFetcher { table_metadata };
   }
 }
@@ -40,11 +39,10 @@ impl RelationFetcher {
 
     let psql_table: &PsqlTable = psql_table.unwrap();
 
-    let row: Row = self.table_metadata.borrow_mut().get_one_row(
-      psql_table,
-      input.column_name,
-      input.column_value,
-    )?;
+    let row: Row =
+      self
+        .table_metadata
+        .get_one_row(psql_table, input.column_name, input.column_value)?;
 
     let row: Rc<Row> = Rc::new(row);
 
@@ -241,7 +239,6 @@ impl RelationFetcher {
   ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
     return self
       .table_metadata
-      .borrow_mut()
       .get_psql_table_rows(table, column_name, &id)
       .map(RoseTreeNode::new);
   }

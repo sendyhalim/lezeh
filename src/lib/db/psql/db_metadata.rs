@@ -141,27 +141,29 @@ impl Query {
 }
 
 pub struct DbMetadata {
-  query: Query,
+  /// We know that we own this query so it's ok
+  /// to directl borrow_mut() without checking ownership
+  query: RefCell<Query>,
 }
 
 impl DbMetadata {
   pub fn new(psql_connection: Rc<RefCell<PsqlConnection>>) -> DbMetadata {
     return DbMetadata {
-      query: Query {
+      query: RefCell::new(Query {
         connection: psql_connection,
-      },
+      }),
     };
   }
 }
 
 impl DbMetadata {
   pub fn load_table_structure<'a, 'b>(
-    &'a mut self,
+    &self,
     schema: &str,
   ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
-    let fk_info_rows = self.query.fetch_fk_info(schema)?;
+    let fk_info_rows = self.query.borrow_mut().fetch_fk_info(schema)?;
 
-    let mut table_by_name = self.query.get_table_by_name()?;
+    let mut table_by_name = self.query.borrow_mut().get_table_by_name()?;
 
     psql_table_map_from_foreign_key_info_rows(&mut table_by_name, &fk_info_rows);
 

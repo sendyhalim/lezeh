@@ -124,28 +124,31 @@ impl Query {
 }
 
 pub struct TableMetadata {
-  query: Query,
+  /// We know that we own this query so it's ok
+  /// to directl borrow_mut() without checking ownership
+  query: RefCell<Query>,
 }
 
 impl TableMetadata {
   pub fn new(psql_connection: Rc<RefCell<PsqlConnection>>) -> TableMetadata {
     return TableMetadata {
-      query: Query {
+      query: RefCell::new(Query {
         connection: psql_connection,
-      },
+      }),
     };
   }
 }
 
 impl TableMetadata {
   pub fn get_column(
-    &mut self,
+    &self,
     schema: &str,
     table_name: &str,
     column_name: &str,
   ) -> ResultAnyError<PsqlTableColumn> {
     let row = self
       .query
+      .borrow_mut()
       .get_column_metadata(schema, table_name, column_name)?;
 
     let column = PsqlTableColumn::new(column_name.to_string(), row.get("data_type"));
@@ -154,12 +157,12 @@ impl TableMetadata {
   }
 
   pub fn get_psql_table_rows<'a>(
-    &mut self,
+    &self,
     table: PsqlTable<'a>,
     column_name: &str,
     id: &PsqlParamValue,
   ) -> ResultAnyError<PsqlTableRows<'a>> {
-    let rows = self.query.find_rows(&FetchRowInput {
+    let rows = self.query.borrow_mut().find_rows(&FetchRowInput {
       schema: table.schema.as_ref(),
       table_name: table.name.as_ref(),
       column_name,
@@ -173,7 +176,7 @@ impl TableMetadata {
   }
 
   pub fn get_one_row<'a>(
-    &mut self,
+    &self,
     table: &PsqlTable<'a>,
     column_name: &str,
     id: &str,
@@ -181,7 +184,7 @@ impl TableMetadata {
     let column = self.get_column(&table.schema, &table.name, column_name)?;
     let id: PsqlParamValue = FetchRowInput::psql_param_value(id.to_string(), column)?;
 
-    let row = self.query.find_one_row(&FetchRowInput {
+    let row = self.query.borrow_mut().find_one_row(&FetchRowInput {
       schema: table.schema.as_ref(),
       table_name: table.name.as_ref(),
       column_name,
