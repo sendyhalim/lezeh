@@ -31,7 +31,11 @@ impl DbCli {
       .about("db cli")
       .subcommand(
         SubCommand::with_name("cherry-pick")
-          .about("Cherry pick data from the given db source into the db target")
+          .about(indoc::indoc! {"
+            Cherry pick row from the given db source and prints
+            out insert statements for that specific row and all of its relations
+            connected by foreign key.
+          "})
           .arg(
             Arg::with_name("schema")
               .long("--schema")
@@ -66,13 +70,6 @@ impl DbCli {
               .required(true)
               .takes_value(true)
               .help("Source db to fetch data from"),
-          )
-          .arg(
-            Arg::with_name("target_db")
-              .required(true)
-              .takes_value(true)
-              .long("--target-db")
-              .help("Target db to insert db"),
           ),
       );
   }
@@ -90,7 +87,6 @@ impl DbCli {
 
         return DbCli::cherry_pick(
           cherry_pick_cli.value_of("source_db").unwrap(),
-          cherry_pick_cli.value_of("target_db").unwrap(),
           cherry_pick_cli.value_of("table").unwrap(),
           values,
           cherry_pick_cli.value_of("column").or(Some("id")).unwrap(),
@@ -111,7 +107,6 @@ impl DbCli {
 impl DbCli {
   fn cherry_pick<'a>(
     source_db: &str,
-    target_db: &str,
     table: &str,
     values: Vec<String>,
     column: &str,
@@ -126,11 +121,6 @@ impl DbCli {
     let source_db_config: DbConfig = db_by_name
       .get(source_db)
       .ok_or_else(|| anyhow!("Source db {} is not registered", source_db))?
-      .clone();
-
-    let target_db_config: DbConfig = db_by_name
-      .get(target_db)
-      .ok_or_else(|| anyhow!("Target db {} is not registered", target_db))?
       .clone();
 
     let db_creds = PsqlCreds {

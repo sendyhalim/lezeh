@@ -48,7 +48,16 @@ impl<'b> FetchRowInput<'b> {
     let mut value: PsqlParamValue = Box::new(column_value.clone());
 
     if data_type == "integer" {
-      value = Box::new(column_value.clone().parse::<i32>()?);
+      let convert_column_value = column_value.clone().parse::<i32>().map_err(|err| {
+        return anyhow!(
+          "Cannot cast column '{}' of value {} to integer. Error: {}",
+          column.name,
+          column_value,
+          err
+        );
+      })?;
+
+      value = Box::new(convert_column_value);
     } else if data_type == "uuid" {
       let uuid = Uuid::from_str(&column_value)?;
 

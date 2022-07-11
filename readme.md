@@ -29,8 +29,8 @@ make install
 ```
 
 
-## Setup
 First create config file at `~/.lezeh`, we're using YAML format.
+## Setup
 
 ```yaml
 phab:
@@ -44,6 +44,14 @@ ghub:
 
 bitly:
   api_token: test123
+
+db_by_name:
+  testdb:
+    host: localhost
+    port: 5432
+    database: db_name
+    username: ....
+    password: ....
 
 # Deployment command config
 deployment:
@@ -68,8 +76,30 @@ deployment:
 
 
 ## Usage
-### Deployment Command
+### URL cli
+```
+lezeh url shorten {longUrl}
+```
 
+### Database cli
+Mostly tooling related with database operations. Only supports postgres as of now.
+
+#### cherry-pick
+Imagine you have this 1 table row that you want to copy but you can't easily
+copy it because it has relations and you need to copy the parents and children
+recursively. This is where cherry-pick can be useful.
+
+```bash
+lezeh db cherry-pick \
+  --source-db=testdb \ # Fetch from test_db, this one is based on the config
+  --values=123 \ # As of now only supports 1 value, but it will change in the future
+  --table=orders \ # Table that the value will be fetched from
+  --column=id \ # Optional arg, which column that contains the given values, defaults to id
+  --schema=public # Db schema, defaults to public
+```
+
+
+### Deployment cli
 ```bash
 # Below command will iterate all repositories under deployment.repositories config
 # and do the following operations:
@@ -88,9 +118,3 @@ lezeh deployment merge-feature-branches {task_number} {task_number} {task_number
 # lezeh deployment deploy repo-key stg
 lezeh deployment deploy {repo_key} {scheme_key}
 ```
-
-### URL Command
-```
-lezeh url shorten {longUrl}
-```
-

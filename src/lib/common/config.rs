@@ -76,6 +76,7 @@ pub struct Config {
   pub deployment: DeploymentConfig,
   pub db_by_name: Option<HashMap<String, DbConfig>>,
 }
+
 impl Config {
   pub fn new(setting_path: impl AsRef<Path>) -> ResultAnyError<Config> {
     let config_str = fs::read_to_string(setting_path)?;
