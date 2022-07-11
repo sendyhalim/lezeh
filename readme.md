@@ -14,8 +14,8 @@ Go to latest releases and download the binaries [here](https://github.com/sendyh
 
 | Binary                               | OS    |
 | ------------------------------------ | ----- |
-| `lezeh-x86_64-unknown-linux-gnu.zip` | Linux |
-| `lezeh-x86_64-apple-darwin.zip`      | macOS |
+| [`lezeh-x86_64-unknown-linux-gnu.zip`](https://github.com/sendyhalim/lezeh/releases/latest/download/lezeh-x86_64-unknown-linux-gnu.zip) | Linux |
+| [`lezeh-x86_64-apple-darwin.zip`](https://github.com/sendyhalim/lezeh/releases/latest/download/lezeh-x86_64-apple-darwin.zip)      | macOS |
 
 ### Using cargo
 ```bash
