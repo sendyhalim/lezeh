@@ -2,8 +2,9 @@ use std::collections::VecDeque;
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::common::types::ResultDynError;
+use crate::common::types::ResultAnyError;
 use crate::common::utils;
+use anyhow::anyhow;
 
 /// A command that has some presets such as:
 /// - Working directory
@@ -12,7 +13,7 @@ pub struct PresetCommand {
 }
 
 impl PresetCommand {
-  pub fn exec(&self, command_str: &str) -> ResultDynError<String> {
+  pub fn exec(&self, command_str: &str) -> ResultAnyError<String> {
     let command_result = self
       .spawn_command_from_str(command_str, None, None)?
       .wait_with_output()?;
@@ -29,14 +30,13 @@ impl PresetCommand {
     command_str: &str,
     stdin: Option<Stdio>,
     stdout: Option<Stdio>,
-  ) -> ResultDynError<std::process::Child> {
+  ) -> ResultAnyError<std::process::Child> {
     let mut command_parts: VecDeque<String> =
       PresetCommand::create_command_parts_from_string(command_str);
 
     let command = command_parts
       .pop_front()
-      .ok_or(format!("Invalid command: {}", command_str))
-      .map_err(failure::err_msg)?;
+      .ok_or(anyhow!("Invalid command: {}", command_str))?;
 
     let handle = Command::new(command)
       .args(command_parts)
@@ -81,13 +81,13 @@ impl PresetCommand {
   }
 }
 
-pub fn stderr_to_err(stderr: Vec<u8>) -> ResultDynError<String> {
+pub fn stderr_to_err(stderr: Vec<u8>) -> ResultAnyError<String> {
   let output_err = utils::bytes_to_string(stderr)?;
 
-  return Err(failure::err_msg(output_err));
+  return Err(anyhow!(output_err));
 }
 
-pub fn handle_command_output(output: std::process::Output) -> ResultDynError<String> {
+pub fn handle_command_output(output: std::process::Output) -> ResultAnyError<String> {
   if !output.stderr.is_empty() {
     // Convert explicitly to Err.
     return stderr_to_err(output.stderr);

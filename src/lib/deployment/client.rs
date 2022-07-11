@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use failure::Fail;
+use anyhow::anyhow;
+use anyhow::Error;
 use futures::FutureExt;
 use ghub::v3::branch::DeleteBranchInput;
 use ghub::v3::client::GithubClient;
@@ -21,18 +22,22 @@ use crate::common::command;
 use crate::common::command::PresetCommand;
 use crate::common::config::Config;
 use crate::common::config::RepositoryConfig;
-use crate::common::types::ResultDynError;
+use crate::common::types::ResultAnyError;
 
 pub struct GlobalDeploymentClient {
   pub config: Config,
   phabricator: Arc<PhabricatorClient>,
-  ghub: Arc<GithubClient>,
   repository_deployment_client_by_key: HashMap<String, RepositoryDeploymentClient>,
+
+  #[allow(dead_code)]
+  ghub: Arc<GithubClient>,
+
+  #[allow(dead_code)]
   logger: Logger,
 }
 
 impl GlobalDeploymentClient {
-  pub fn new(config: Config, logger: Logger) -> ResultDynError<GlobalDeploymentClient> {
+  pub fn new(config: Config, logger: Logger) -> ResultAnyError<GlobalDeploymentClient> {
     let cert_identity_config = CertIdentityConfig {
       pkcs12_path: config.phab.pkcs12_path.clone(),
       pkcs12_password: config.phab.pkcs12_password.clone(),
@@ -75,17 +80,14 @@ impl GlobalDeploymentClient {
   }
 }
 
-#[derive(Debug, Clone, Fail)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ClientOperationError {
-  #[fail(display = "Merge failed, please see {}", pull_request_url)]
+  #[error("Merge failed, please see {pull_request_url:?}")]
   MergeError {
     remote_branch: String,
     pull_request_url: String,
   },
-  #[fail(
-    display = "Remote branch is behind master(no changes to master), remote branch {}",
-    remote_branch
-  )]
+  #[error("Remote branch is behind master(no changes to master), remote branch {remote_branch:?}")]
   RemoteBranchIsBehindMasterError {
     remote_branch: String,
     debug_url: String,
@@ -146,12 +148,12 @@ pub struct TaskInMasterBranch {
 }
 
 impl GlobalDeploymentClient {
-  pub async fn deploy(&self, repo_key: &str, scheme_key: &str) -> ResultDynError<()> {
+  pub async fn deploy(&self, repo_key: &str, scheme_key: &str) -> ResultAnyError<()> {
     let repo_deployment_client = self
       .repository_deployment_client_by_key
       .get(repo_key)
       .ok_or_else(|| {
-        return failure::err_msg(format!("Invalid repo key {}", repo_key));
+        return anyhow!("Invalid repo key {}", repo_key);
       })?;
 
     return repo_deployment_client
@@ -162,7 +164,7 @@ impl GlobalDeploymentClient {
   pub async fn merge_feature_branches(
     &self,
     task_ids: &Vec<&str>,
-  ) -> ResultDynError<MergeFeatureBranchesOutput> {
+  ) -> ResultAnyError<MergeFeatureBranchesOutput> {
     let tasks: Vec<Task> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
     let task_by_id: HashMap<String, Task> = tasks
       .iter()
@@ -188,7 +190,7 @@ impl GlobalDeploymentClient {
       .map(|user| (user.phid.clone(), user))
       .collect();
 
-    let mut merge_results: Vec<ResultDynError<MergeAllTasksOutput>> = vec![];
+    let mut merge_results: Vec<ResultAnyError<MergeAllTasksOutput>> = vec![];
 
     for deployment_client in self.repository_deployment_client_by_key.values() {
       let merge_result = deployment_client.merge_all_tasks(&task_by_id).await;
@@ -197,7 +199,7 @@ impl GlobalDeploymentClient {
     }
 
     // Make sure that all is well
-    let merge_results: ResultDynError<Vec<MergeAllTasksOutput>> =
+    let merge_results: ResultAnyError<Vec<MergeAllTasksOutput>> =
       merge_results.into_iter().collect();
     let merge_results = merge_results?;
     let not_found_user_task_mappings =
@@ -260,7 +262,7 @@ impl RepositoryDeploymentClient {
   async fn get_pull_request<'a>(
     &self,
     input: GetPullRequestInput<'a>,
-  ) -> ResultDynError<Option<Value>> {
+  ) -> ResultAnyError<Option<Value>> {
     let GetPullRequestInput {
       repo_path,
       branch_name,
@@ -275,8 +277,7 @@ impl RepositoryDeploymentClient {
         branch_owner: repo_path
           .split('/')
           .nth(0)
-          .ok_or(format!("Could not read branch owner from {}", repo_path))
-          .map_err(failure::err_msg)?,
+          .ok_or(anyhow!("Could not read branch owner from {}", repo_path))?,
       })
       .await;
   }
@@ -287,7 +288,7 @@ impl RepositoryDeploymentClient {
     source_branch_name: &str,
     into_branch_name: &str,
     merge_method: github_pull_request::GithubMergeMethod,
-  ) -> ResultDynError<SuccesfulMergeOutput> {
+  ) -> ResultAnyError<SuccesfulMergeOutput> {
     let repo_path = &self.config.github_path;
 
     let mut pull_request: Option<Value> = self
@@ -354,7 +355,7 @@ impl RepositoryDeploymentClient {
 
     let pull_request = pull_request.unwrap();
     let mergeable: bool = pull_request["mergeable"].as_bool().ok_or_else(|| {
-      return failure::format_err!(
+      return anyhow!(
         "Could not read mergeable field from pull request {:?}",
         pull_request,
       );
@@ -387,7 +388,7 @@ impl RepositoryDeploymentClient {
     slog::info!(self.logger, "Done merging PR");
     slog::debug!(self.logger, "Response body {:?}", res_body);
 
-    let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(failure::err_msg(
+    let merge_succeeded: bool = res_body["merged"].as_bool().ok_or(anyhow!(
       "Failed to parse merge pull request 'merged' to bool",
     ))?;
 
@@ -413,13 +414,13 @@ impl RepositoryDeploymentClient {
     &self,
     scheme_key: &str,
     merge_method: GithubMergeMethod,
-  ) -> ResultDynError<()> {
+  ) -> ResultAnyError<()> {
     let scheme = self
       .config
       .deployment_scheme_by_key
       .get(scheme_key)
       .ok_or_else(|| {
-        return failure::err_msg(format!("Invalid scheme key {}", scheme_key));
+        return anyhow!("Invalid scheme key {}", scheme_key);
       })?;
 
     let _ = self
@@ -437,7 +438,7 @@ impl RepositoryDeploymentClient {
   pub async fn merge_all_tasks(
     &self,
     task_by_id: &HashMap<String, Task>,
-  ) -> ResultDynError<MergeAllTasksOutput> {
+  ) -> ResultAnyError<MergeAllTasksOutput> {
     slog::info!(self.logger, "[Run] git checkout master");
 
     slog::info!(
@@ -482,7 +483,7 @@ impl RepositoryDeploymentClient {
     let tasks_in_master_branch_by_task_id =
       self.tasks_in_master_branch_by_task_id(&task_ids).await?;
 
-    let all: Vec<futures::future::BoxFuture<(String, ResultDynError<SuccesfulMergeOutput>)>> =
+    let all: Vec<futures::future::BoxFuture<(String, ResultAnyError<SuccesfulMergeOutput>)>> =
       filtered_branch_mappings
         .iter()
         .map(|MatchedTaskBranchMapping(task_id, remote_branch)| {
@@ -509,7 +510,7 @@ impl RepositoryDeploymentClient {
         })
         .collect();
 
-    let mut results: Vec<(String, ResultDynError<SuccesfulMergeOutput>)> = vec![];
+    let mut results: Vec<(String, ResultAnyError<SuccesfulMergeOutput>)> = vec![];
 
     // Merge in serially instead of concurrently to reduce possibility
     // of race conditions.
@@ -517,8 +518,8 @@ impl RepositoryDeploymentClient {
       results.push(fut.await);
     }
 
-    let show_stopper_error: Option<&failure::Error> = results.iter().find_map(
-      |(_task_id, result): &(String, Result<SuccesfulMergeOutput, failure::Error>)| -> Option<&failure::Error> {
+    let show_stopper_error: Option<&Error> = results.iter().find_map(
+      |(_task_id, result): &(String, ResultAnyError<SuccesfulMergeOutput>)| -> Option<&Error> {
         return result.as_ref().err().filter(|err| {
           let maybe_merge_error: Option<&ClientOperationError> = err.downcast_ref();
 
@@ -528,12 +529,12 @@ impl RepositoryDeploymentClient {
     );
 
     if show_stopper_error.is_some() {
-      return Err(failure::err_msg(format!("{}", show_stopper_error.unwrap())));
+      return Err(anyhow!(format!("{}", show_stopper_error.unwrap())));
     }
 
     let (successes, failures): (
-      Vec<(String, ResultDynError<SuccesfulMergeOutput>)>,
-      Vec<(String, ResultDynError<SuccesfulMergeOutput>)>,
+      Vec<(String, ResultAnyError<SuccesfulMergeOutput>)>,
+      Vec<(String, ResultAnyError<SuccesfulMergeOutput>)>,
     ) = results
       .into_iter()
       .partition(|(_task_id, result)| result.is_ok());
@@ -541,7 +542,7 @@ impl RepositoryDeploymentClient {
     let failed_merge_task_output_by_task_id: HashMap<_, _> = failures
       .into_iter()
       .map(
-        |(task_id, possible_merge_error): (String, ResultDynError<SuccesfulMergeOutput>)| -> (String, FailedMergeTaskOutput) {
+        |(task_id, possible_merge_error): (String, ResultAnyError<SuccesfulMergeOutput>)| -> (String, FailedMergeTaskOutput) {
           let err = possible_merge_error.err().unwrap();
           let client_operation_error: &ClientOperationError = err.downcast_ref().unwrap();
 
@@ -594,13 +595,13 @@ impl RepositoryDeploymentClient {
     &self,
     pull_request_title: &str,
     remote_branch: &str,
-  ) -> ResultDynError<SuccesfulMergeOutput> {
+  ) -> ResultAnyError<SuccesfulMergeOutput> {
     // Create PR
     // -----------------------
-    let branch_name = remote_branch.split('/').last().ok_or(failure::format_err!(
-      "Could not get branch name from {}",
-      remote_branch
-    ))?;
+    let branch_name = remote_branch
+      .split('/')
+      .last()
+      .ok_or(anyhow!("Could not get branch name from {}", remote_branch))?;
 
     let merge_output = self
       .merge_remote_branch(
@@ -628,7 +629,7 @@ impl RepositoryDeploymentClient {
   async fn tasks_in_master_branch_by_task_id(
     &self,
     task_ids: &Vec<&str>,
-  ) -> ResultDynError<HashMap<String, Vec<TaskInMasterBranch>>> {
+  ) -> ResultAnyError<HashMap<String, Vec<TaskInMasterBranch>>> {
     let git_log_handle = self.preset_command.spawn_command_from_str(
       "git log --oneline --no-decorate", // In format {abbreviatedHash} {message}
       None,

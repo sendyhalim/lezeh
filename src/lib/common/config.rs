@@ -1,12 +1,11 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::{borrow::Cow, collections::HashMap};
 
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::common::asset::Asset;
-use crate::common::types::ResultDynError;
+use crate::common::types::ResultAnyError;
 
 /// Phab config
 /// -------------
@@ -75,10 +74,11 @@ pub struct Config {
   pub ghub: GhubConfig,
   pub bitly: Option<BitlyConfig>,
   pub deployment: DeploymentConfig,
+  pub db_by_name: Option<HashMap<String, DbConfig>>,
 }
 
 impl Config {
-  pub fn new(setting_path: impl AsRef<Path>) -> ResultDynError<Config> {
+  pub fn new(setting_path: impl AsRef<Path>) -> ResultAnyError<Config> {
     let config_str = fs::read_to_string(setting_path)?;
     let mut config: Config = serde_yaml::from_str(&config_str)?;
 
@@ -88,4 +88,14 @@ impl Config {
 
     return Ok(config);
   }
+}
+
+/// DB Related Command Config
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbConfig {
+  pub host: String,
+  pub port: u32,
+  pub database: String,
+  pub username: String,
+  pub password: Option<String>,
 }
