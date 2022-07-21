@@ -8,8 +8,70 @@ use postgres::Column;
 use postgres_types::Type as PsqlType;
 
 use crate::common::types::ResultAnyError;
+use crate::db::psql::dto::PsqlTable;
 use crate::db::psql::dto::PsqlTableRows;
 use crate::db::psql::dto::Uuid;
+
+pub struct TableInsertStatement<'a> {
+  table: PsqlTable<'a>,
+  columns: TableInsertRowColumns<'a>,
+  row_values: Vec<TableInsertRowValues>,
+}
+
+impl<'a> std::fmt::Display for TableInsertStatement<'a> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    // let template = ;
+
+    return write!(
+      f,
+      indoc::indoc! {"
+        ------------------------------------------------
+        -- insert into table {}
+        ------------------------------------------------
+        insert into {} ({}) VALUES
+          {};
+        ---------------
+
+      "},
+      self.table.id,
+      self.table.id,
+      self.columns,
+      self
+        .row_values
+        .iter()
+        .map(|val| format!("{}", val))
+        .collect::<Vec<String>>()
+        .join(",\n"),
+    );
+  }
+}
+
+pub struct TableInsertRowColumns<'a> {
+  columns: &'a [Column],
+}
+
+impl<'a> std::fmt::Display for TableInsertRowColumns<'a> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let column_string: String = self
+      .columns
+      .iter()
+      .map(|c| String::from(c.name()))
+      .collect::<Vec<String>>()
+      .join(", ");
+
+    return write!(f, "{}", column_string);
+  }
+}
+
+pub struct TableInsertRowValues {
+  values: Vec<String>,
+}
+
+impl std::fmt::Display for TableInsertRowValues {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return write!(f, "({})", self.values.join(", "));
+  }
+}
 
 pub struct RelationInsert {}
 
@@ -47,33 +109,37 @@ impl RelationInsert {
   pub fn table_row_into_insert_statement(table_row: &PsqlTableRows) -> ResultAnyError<String> {
     let rows: &Vec<Rc<Row>> = &table_row.rows;
     let first_row: Rc<Row> = rows.get(0).unwrap().clone();
-    let columns: &[Column] = first_row.columns(); // Slice
-    let column_string: String = columns
-      .iter()
-      .map(|c| String::from(c.name()))
-      .collect::<Vec<String>>()
-      .join(", ");
+    let table_insert_row_columns = TableInsertRowColumns {
+      columns: first_row.columns(),
+    };
 
-    let values: String = rows
+    let row_values: Vec<TableInsertRowValues> = rows
       .iter()
       .map(|row| {
-        return columns
+        return table_insert_row_columns
+          .columns
           .iter()
           .map(|c| {
-            let sink: FromSqlSink = row.get::<'_, _, FromSqlSink>(c.name());
+            let sink = row.get::<'_, _, FromSqlSink>(c.name());
 
             return sink.to_string_for_statement();
           })
           .collect::<ResultAnyError<Vec<String>>>()
-          .map(|val| format!("({})", val.join(", ")));
+          .map(|values_in_string| {
+            return TableInsertRowValues {
+              values: values_in_string,
+            };
+          });
       })
-      .collect::<ResultAnyError<Vec<String>>>()?
-      .join(",");
+      .collect::<ResultAnyError<Vec<TableInsertRowValues>>>()?;
 
-    return Ok(format!(
-      "insert into {} ({}) VALUES {};",
-      table_row.table.id, column_string, values
-    ));
+    let table_insert_statement = TableInsertStatement {
+      table: table_row.table.clone(),
+      columns: table_insert_row_columns,
+      row_values,
+    };
+
+    return Ok(format!("{}", table_insert_statement));
   }
 }
 
