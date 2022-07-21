@@ -19,8 +19,7 @@ impl RelationFetcher {
 }
 
 pub struct FetchRowsAsRoseTreeInput<'a> {
-  pub schema: &'a str,
-  pub table_name: &'a str,
+  pub table_id: &'a PsqlTableIdentity<'a>,
   pub column_name: &'a str,
   pub column_value: &'a str,
 }
@@ -29,9 +28,9 @@ impl RelationFetcher {
   pub fn fetch_rose_trees_to_be_inserted<'a>(
     &mut self,
     input: FetchRowsAsRoseTreeInput,
-    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
+    psql_table_by_id: &'a HashMap<PsqlTableIdentity, PsqlTable<'a>>,
   ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRows<'a>>>> {
-    let psql_table = psql_table_by_name.get(&input.table_name.to_string());
+    let psql_table = psql_table_by_id.get(&input.table_id);
 
     if psql_table.is_none() {
       return Ok(vec![]);
@@ -48,9 +47,9 @@ impl RelationFetcher {
 
     // We just fetched it, let's just assume naively that the table
     // will still exist right after we fetch it.
-    let current_table: PsqlTable = psql_table_by_name
-      .get(&input.table_name.to_string())
-      .ok_or_else(|| format!("Could not get table {}", input.table_name))
+    let current_table: PsqlTable = psql_table_by_id
+      .get(&input.table_id)
+      .ok_or_else(|| format!("Could not get table {}", input.table_id))
       .unwrap()
       .clone();
 
@@ -78,13 +77,13 @@ impl RelationFetcher {
 
     let mut row_node: RoseTreeNode<PsqlTableRows> = RoseTreeNode::new(psql_table_rows);
 
-    let mut fetched_table_by_name: HashMap<String, PsqlTable> = Default::default();
+    let mut fetched_table_by_id: HashMap<PsqlTableIdentity, PsqlTable> = Default::default();
 
     let row_node_with_parents = self.fetch_referencing_rows(
       current_table.clone(),
       RowUtil::get_id_from_row(row.as_ref(), &current_table.primary_column),
-      &psql_table_by_name,
-      &mut fetched_table_by_name,
+      &psql_table_by_id,
+      &mut fetched_table_by_id,
     )?;
 
     if row_node_with_parents.is_some() {
@@ -106,14 +105,14 @@ impl RelationFetcher {
     //     otherwise stop
 
     // Reset for current table bcs we're doing double fetch here
-    fetched_table_by_name.remove(&current_table.name.to_string());
+    fetched_table_by_id.remove(&current_table.id);
 
     let row_node_with_children = self.fetch_referenced_rows(
       current_table.clone(),
       &current_table.primary_column,
       RowUtil::get_id_from_row(row.as_ref(), &current_table.primary_column),
-      &psql_table_by_name,
-      &mut fetched_table_by_name,
+      &psql_table_by_id,
+      &mut fetched_table_by_id,
     )?;
 
     if row_node_with_children.is_some() {
@@ -127,14 +126,14 @@ impl RelationFetcher {
     &mut self,
     table: PsqlTable<'a>,
     id: PsqlParamValue,
-    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
-    fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
+    psql_table_by_id: &'a HashMap<PsqlTableIdentity<'a>, PsqlTable<'a>>,
+    fetched_table_by_id: &mut HashMap<PsqlTableIdentity<'a>, PsqlTable<'a>>,
   ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows<'a>>>> {
-    if fetched_table_by_name.contains_key(&table.name.to_string()) {
+    if fetched_table_by_id.contains_key(&table.id) {
       return Ok(None);
     }
 
-    fetched_table_by_name.insert(table.name.to_string(), table.clone());
+    fetched_table_by_id.insert(table.id.clone(), table.clone());
 
     let mut row_node =
       self.create_initial_node_from_row(table.clone(), &table.primary_column.name, id)?;
@@ -151,12 +150,17 @@ impl RelationFetcher {
       .referencing_fk_by_constraint_name
       .iter()
       .filter_map(|(_key, psql_foreign_key)| {
+        let foreign_table_id = PsqlTableIdentity::new(
+          psql_foreign_key.foreign_table_schema.clone(),
+          psql_foreign_key.foreign_table_name.clone(),
+        );
+
         return self
           .fetch_referencing_rows(
-            psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            psql_table_by_id[&foreign_table_id].clone(),
             RowUtil::get_id_from_row(row.as_ref(), &psql_foreign_key.column),
-            psql_table_by_name,
-            fetched_table_by_name,
+            psql_table_by_id,
+            fetched_table_by_id,
           )
           .unwrap(); // TODO handle gracefully, convert Vec<Result<E, T>> to Result<Vec<T>, E>
       })
@@ -172,14 +176,14 @@ impl RelationFetcher {
     table: PsqlTable<'a>,
     fk_column: &PsqlTableColumn,
     id: PsqlParamValue,
-    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
-    fetched_table_by_name: &mut HashMap<String, PsqlTable<'a>>,
+    psql_table_by_id: &'a HashMap<PsqlTableIdentity<'a>, PsqlTable<'a>>,
+    fetched_table_by_id: &mut HashMap<PsqlTableIdentity<'a>, PsqlTable<'a>>,
   ) -> ResultAnyError<Option<RoseTreeNode<PsqlTableRows<'a>>>> {
-    if fetched_table_by_name.contains_key(&table.name.to_string()) {
+    if fetched_table_by_id.contains_key(&table.id) {
       return Ok(None);
     }
 
-    fetched_table_by_name.insert(table.name.to_string(), table.clone());
+    fetched_table_by_id.insert(table.id.clone(), table.clone());
 
     let mut row_node = self.create_initial_node_from_row(table.clone(), &fk_column.name, id)?;
 
@@ -195,12 +199,17 @@ impl RelationFetcher {
       .referencing_fk_by_constraint_name
       .iter()
       .filter_map(|(_key, psql_foreign_key)| {
+        let foreign_table_id = PsqlTableIdentity::new(
+          psql_foreign_key.foreign_table_schema.clone(),
+          psql_foreign_key.foreign_table_name.clone(),
+        );
+
         return self
           .fetch_referencing_rows(
-            psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            psql_table_by_id[&foreign_table_id].clone(),
             RowUtil::get_id_from_row(row, &psql_foreign_key.column),
-            psql_table_by_name,
-            fetched_table_by_name,
+            psql_table_by_id,
+            fetched_table_by_id,
           )
           .unwrap();
       })
@@ -214,13 +223,18 @@ impl RelationFetcher {
       .referenced_fk_by_constraint_name
       .iter()
       .filter_map(|(_key, psql_foreign_key)| {
+        let foreign_table_id = PsqlTableIdentity::new(
+          psql_foreign_key.foreign_table_schema.clone(),
+          psql_foreign_key.foreign_table_name.clone(),
+        );
+
         return self
           .fetch_referenced_rows(
-            psql_table_by_name[&psql_foreign_key.foreign_table_name.to_string()].clone(),
+            psql_table_by_id[&foreign_table_id].clone(),
             &psql_foreign_key.column,
             RowUtil::get_id_from_row(row, &primary_column),
-            psql_table_by_name,
-            fetched_table_by_name,
+            psql_table_by_id,
+            fetched_table_by_id,
           )
           .unwrap();
       })

@@ -72,7 +72,7 @@ impl RelationInsert {
 
     return Ok(format!(
       "insert into {} ({}) VALUES {};",
-      table_row.table.name, column_string, values
+      table_row.table.id, column_string, values
     ));
   }
 }

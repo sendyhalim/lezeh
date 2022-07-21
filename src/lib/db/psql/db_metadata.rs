@@ -25,20 +25,18 @@ const TABLE_WITH_FK_QUERY: &'static str = "
       foreign_c_meta.data_type AS foreign_column_data_type
     FROM
       information_schema.table_constraints AS tc
-        JOIN information_schema.key_column_usage AS kcu
-          ON tc.constraint_name = kcu.constraint_name
-          AND tc.table_schema = kcu.table_schema
-        JOIN information_schema.constraint_column_usage AS ccu
-          ON ccu.constraint_name = tc.constraint_name
-          AND ccu.table_schema = tc.table_schema
-        JOIN information_schema.columns as c
-          ON c.table_schema = tc.table_schema
-          AND c.table_name = tc.table_name
-          AND c.column_name = kcu.column_name
-        JOIN information_schema.columns as foreign_c_meta
-          ON foreign_c_meta.table_schema = ccu.table_schema
-          AND foreign_c_meta.table_name = ccu.table_name
-          AND foreign_c_meta.column_name = ccu.column_name
+        JOIN information_schema.key_column_usage AS kcu ON
+          tc.constraint_name = kcu.constraint_name AND
+          tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu ON
+          ccu.constraint_name = tc.constraint_name
+        JOIN information_schema.columns as c ON
+          c.table_name = tc.table_name AND
+          c.column_name = kcu.column_name
+        JOIN information_schema.columns as foreign_c_meta ON
+          foreign_c_meta.table_schema = ccu.table_schema AND
+          foreign_c_meta.table_name = ccu.table_name AND
+          foreign_c_meta.column_name = ccu.column_name
     WHERE tc.constraint_type = 'FOREIGN KEY';
 ";
 
@@ -93,7 +91,9 @@ impl Query {
     return Ok(fk_info_rows);
   }
 
-  fn get_table_by_name<'a, 'b>(&'a mut self) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
+  fn get_table_by_id<'a, 'b>(
+    &'a mut self,
+  ) -> ResultAnyError<HashMap<PsqlTableIdentity<'b>, PsqlTable<'b>>> {
     let rows: Vec<Row> = self.connection.borrow_mut().get().query(
       "
       SELECT
@@ -117,7 +117,7 @@ impl Query {
       &[],
     )?;
 
-    let psql_table_by_name: HashMap<String, PsqlTable> = rows
+    let psql_table_by_id: HashMap<PsqlTableIdentity, PsqlTable> = rows
       .into_iter()
       .map(|row| {
         let psql_table = PsqlTable::new(
@@ -132,11 +132,11 @@ impl Query {
           Default::default(),
         );
 
-        return (psql_table.name.to_string(), psql_table);
+        return (psql_table.id.clone(), psql_table);
       })
       .collect();
 
-    return Ok(psql_table_by_name);
+    return Ok(psql_table_by_id);
   }
 }
 
@@ -160,33 +160,33 @@ impl DbMetadata {
   pub fn load_table_structure<'a, 'b>(
     &self,
     schema: &str,
-  ) -> ResultAnyError<HashMap<String, PsqlTable<'b>>> {
+  ) -> ResultAnyError<HashMap<PsqlTableIdentity, PsqlTable<'b>>> {
     let fk_info_rows = self.query.borrow_mut().fetch_fk_info(schema)?;
 
-    let mut table_by_name = self.query.borrow_mut().get_table_by_name()?;
+    let mut table_by_id = self.query.borrow_mut().get_table_by_id()?;
 
-    psql_table_map_from_foreign_key_info_rows(&mut table_by_name, &fk_info_rows);
+    psql_table_map_from_foreign_key_info_rows(&mut table_by_id, &fk_info_rows);
 
-    return Ok(table_by_name);
+    return Ok(table_by_id);
   }
 }
 
 fn psql_table_map_from_foreign_key_info_rows(
-  table_by_name: &mut HashMap<String, PsqlTable>,
+  table_by_id: &mut HashMap<PsqlTableIdentity, PsqlTable>,
   rows: &Vec<ForeignKeyInformationRow>,
 ) {
-  let fk_info_rows_by_foreign_table_name: HashMap<String, Vec<&ForeignKeyInformationRow>> =
+  let fk_info_rows_by_foreign_table_id: HashMap<PsqlTableIdentity, Vec<&ForeignKeyInformationRow>> =
     rows.iter().into_group_map_by(|row| {
-      return row.foreign_table_name.clone();
+      return PsqlTableIdentity::new(&row.foreign_table_schema, &row.foreign_table_name);
     });
 
-  let fk_info_rows_by_table_name: HashMap<String, Vec<&ForeignKeyInformationRow>> =
+  let fk_info_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&ForeignKeyInformationRow>> =
     rows.iter().into_group_map_by(|row| {
-      return row.table_name.clone();
+      return PsqlTableIdentity::new(&row.table_schema, &row.table_name);
     });
 
-  for (table_name, table) in table_by_name.into_iter() {
-    let referencing_fk_rows = fk_info_rows_by_table_name.get(&table_name.to_string());
+  for (table_id, table) in table_by_id.into_iter() {
+    let referencing_fk_rows = fk_info_rows_by_table_id.get(&table_id);
 
     if referencing_fk_rows.is_some() {
       let referencing_fk_rows = referencing_fk_rows.unwrap();
@@ -207,7 +207,7 @@ fn psql_table_map_from_foreign_key_info_rows(
         .collect();
     }
 
-    let referenced_fk_rows = fk_info_rows_by_foreign_table_name.get(&table_name.to_string());
+    let referenced_fk_rows = fk_info_rows_by_foreign_table_id.get(&table_id);
 
     if referenced_fk_rows.is_some() {
       let referenced_fk_rows = referenced_fk_rows.unwrap();
@@ -242,8 +242,7 @@ mod test {
       S: Into<Cow<'a, str>>,
     {
       return PsqlTable {
-        schema: schema.into(),
-        name: name.into(),
+        id: PsqlTableIdentity::new(schema, name),
         primary_column,
         columns: Default::default(),
         referenced_fk_by_constraint_name: Default::default(),
@@ -255,7 +254,6 @@ mod test {
   mod psql_tables_from_foreign_key_info_rows {
     use super::*;
     use crate::common::macros::hashmap_literal;
-    use crate::common::string::s;
 
     #[test]
     fn it_should_load_rows() {
@@ -384,62 +382,67 @@ mod test {
         },
       ];
 
-      let mut psql_table_by_name: HashMap<String, PsqlTable> = hashmap_literal! {
-        s("stores") => PsqlTable::basic("public", "stores", PsqlTableColumn{
+      let mut psql_table_by_id: HashMap<PsqlTableIdentity, PsqlTable> = hashmap_literal! {
+        PsqlTableIdentity::new("public", "stores") => PsqlTable::basic("public", "stores", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("orders") => PsqlTable::basic("public", "orders", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "orders") => PsqlTable::basic("public", "orders", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("order_items") => PsqlTable::basic("public", "order_items", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "order_items") => PsqlTable::basic("public", "order_items", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("order_statuses") => PsqlTable::basic("public", "order_statuses", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "order_statuses") => PsqlTable::basic("public", "order_statuses", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("products") => PsqlTable::basic("public", "products", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "products") => PsqlTable::basic("public", "products", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("product_images") => PsqlTable::basic("public", "product_images", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "product_images") => PsqlTable::basic("public", "product_images", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("product_stock_ledgers") => PsqlTable::basic("public", "product_stock_ledgers", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "product_stock_ledgers") => PsqlTable::basic("public", "product_stock_ledgers", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("store_customers") => PsqlTable::basic("public", "store_customers", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "store_customers") => PsqlTable::basic("public", "store_customers", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
-        s("store_staffs_stores") => PsqlTable::basic("public", "store_staffs_stores", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "store_staffs_stores") => PsqlTable::basic("public", "store_staffs_stores", PsqlTableColumn{
           name: "id".into(),
           data_type: "uuid".into(),
         }),
-        s("store_staff_roles") => PsqlTable::basic("public", "store_staff_roles", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "store_staff_roles") => PsqlTable::basic("public", "store_staff_roles", PsqlTableColumn{
           name: "id".into(),
           data_type: "uuid".into(),
         }),
-        s("store_staffs") => PsqlTable::basic("public", "store_staffs", PsqlTableColumn{
+        PsqlTableIdentity::new("public", "store_staffs") => PsqlTable::basic("public", "store_staffs", PsqlTableColumn{
           name: "id".into(),
           data_type: "integer".into(),
         }),
       };
 
       // TODO: Need to prefil psql tables
-      psql_table_map_from_foreign_key_info_rows(&mut psql_table_by_name, &fk_info_rows);
+      psql_table_map_from_foreign_key_info_rows(&mut psql_table_by_id, &fk_info_rows);
 
       // Make sure relations are set correctly
       // -------------------------------------------
       // table: order_items
-      let order_items_table: &PsqlTable = psql_table_by_name.get("order_items").unwrap();
+      let order_items_table: &PsqlTable = psql_table_by_id
+        .get(&PsqlTableIdentity::new("public", "order_items"))
+        .unwrap();
 
-      assert_eq!(order_items_table.name, "order_items");
+      assert_eq!(
+        order_items_table.id,
+        PsqlTableIdentity::new("public", "order_items")
+      );
       assert_eq!(order_items_table.referencing_fk_by_constraint_name.len(), 2);
       assert_eq!(order_items_table.referenced_fk_by_constraint_name.len(), 0);
 
@@ -450,11 +453,15 @@ mod test {
       assert!(fk_to_orders_table_from_order_items.is_some());
 
       // table: store_staffs_stores
-      let store_staffs_stores_table: &PsqlTable = psql_table_by_name
-        .get("store_staffs_stores")
+      let store_staffs_stores_table: &PsqlTable = psql_table_by_id
+        .get(&PsqlTableIdentity::new("public", "store_staffs_stores"))
         .ok_or_else(|| "could not get store_staffs_stores")
         .unwrap();
-      assert_eq!(store_staffs_stores_table.name, "store_staffs_stores");
+
+      assert_eq!(
+        store_staffs_stores_table.id,
+        PsqlTableIdentity::new("public", "store_staffs_stores")
+      );
       assert_eq!(
         store_staffs_stores_table
           .referencing_fk_by_constraint_name
@@ -463,8 +470,15 @@ mod test {
       );
 
       // table: store_staffs_stores
-      let products_table: &PsqlTable = psql_table_by_name.get("products").unwrap();
-      assert_eq!(products_table.name, "products");
+      let products_table: &PsqlTable = psql_table_by_id
+        .get(&PsqlTableIdentity::new("public", "products"))
+        .unwrap();
+
+      assert_eq!(
+        products_table.id,
+        PsqlTableIdentity::new("public", "products")
+      );
+
       assert_eq!(products_table.referencing_fk_by_constraint_name.len(), 1);
       assert_eq!(products_table.referenced_fk_by_constraint_name.len(), 3);
 
@@ -474,7 +488,7 @@ mod test {
       let _available_tables: HashSet<&String> =
         fk_info_rows.iter().map(|row| &row.table_name).collect();
 
-      assert_eq!(psql_table_by_name.len(), 11)
+      assert_eq!(psql_table_by_id.len(), 11)
     }
   }
 }
