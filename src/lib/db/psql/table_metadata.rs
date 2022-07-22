@@ -18,9 +18,9 @@ pub struct Query {
 
 #[derive(Error, Debug)]
 pub enum QueryError {
-  #[error("Row with column {column} = {identifier:?} is not found in table {table_name}")]
+  #[error("Row with column {column} = {identifier:?} is not found in table {table_id}")]
   RowNotFound {
-    table_name: String,
+    table_id: String,
     column: String,
     identifier: String,
   },
@@ -33,8 +33,7 @@ pub enum QueryError {
 }
 
 pub struct FetchRowInput<'a> {
-  pub schema: &'a str,
-  pub table_name: &'a str,
+  pub table_id: &'a PsqlTableIdentity<'a>,
   pub column_name: &'a str,
   pub column_value: &'a PsqlParamValue,
 }
@@ -72,7 +71,7 @@ impl Query {
   fn find_rows(&mut self, input: &FetchRowInput) -> ResultAnyError<Vec<Row>> {
     let query_str = format!(
       "SELECT * FROM {} where {} = $1",
-      input.table_name, input.column_name
+      input.table_id, input.column_name
     );
 
     let mut connection = self.connection.borrow_mut();
@@ -106,10 +105,9 @@ impl Query {
     };
   }
 
-  pub fn get_column_metadata(
+  pub fn get_column_metadata<'a>(
     &mut self,
-    schema: &str,
-    table_name: &str,
+    table_id: &PsqlTableIdentity<'a>,
     column_name: &str,
   ) -> ResultAnyError<Row> {
     let query_str =
@@ -123,8 +121,8 @@ impl Query {
       .query_one(
         &statement,
         &[
-          &schema.to_string(),
-          &table_name.to_string(),
+          &table_id.schema.to_string(),
+          &table_id.name.to_string(),
           &column_name.to_string(),
         ],
       )
@@ -149,16 +147,15 @@ impl TableMetadata {
 }
 
 impl TableMetadata {
-  pub fn get_column(
+  pub fn get_column<'a>(
     &self,
-    schema: &str,
-    table_name: &str,
+    table_id: &PsqlTableIdentity<'a>,
     column_name: &str,
   ) -> ResultAnyError<PsqlTableColumn> {
     let row = self
       .query
       .borrow_mut()
-      .get_column_metadata(schema, table_name, column_name)?;
+      .get_column_metadata(table_id, column_name)?;
 
     let column = PsqlTableColumn::new(column_name.to_string(), row.get("data_type"));
 
@@ -172,8 +169,7 @@ impl TableMetadata {
     id: &PsqlParamValue,
   ) -> ResultAnyError<PsqlTableRows<'a>> {
     let rows = self.query.borrow_mut().find_rows(&FetchRowInput {
-      schema: table.schema.as_ref(),
-      table_name: table.name.as_ref(),
+      table_id: &table.id,
       column_name,
       column_value: id,
     })?;
@@ -190,19 +186,18 @@ impl TableMetadata {
     column_name: &str,
     id: &str,
   ) -> ResultAnyError<Row> {
-    let column = self.get_column(&table.schema, &table.name, column_name)?;
+    let column = self.get_column(&table.id, column_name)?;
     let id: PsqlParamValue = FetchRowInput::psql_param_value(id.to_string(), column)?;
 
     let row = self.query.borrow_mut().find_one_row(&FetchRowInput {
-      schema: table.schema.as_ref(),
-      table_name: table.name.as_ref(),
+      table_id: &table.id,
       column_name,
       column_value: &id,
     })?;
 
     return row.ok_or_else(|| {
       anyhow!(QueryError::RowNotFound {
-        table_name: table.name.to_string(),
+        table_id: format!("{:#?}", table.id),
         column: column_name.into(),
         identifier: format!("{:#?}", id),
       })

@@ -17,8 +17,7 @@ use crate::common::types::ResultAnyError;
 use crate::db::psql;
 use crate::db::psql::connection::*;
 use crate::db::psql::db_metadata::DbMetadata;
-use crate::db::psql::dto::PsqlTable;
-use crate::db::psql::dto::PsqlTableRows;
+use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity, PsqlTableRows};
 use crate::db::psql::table_metadata::TableMetadata;
 
 pub struct DbCli {}
@@ -132,11 +131,11 @@ impl DbCli {
 
     let psql = Rc::new(RefCell::new(PsqlConnection::new(&db_creds)?));
     let db_metadata = DbMetadata::new(psql.clone());
-    let psql_table_by_name = db_metadata.load_table_structure(schema)?;
+    let psql_table_by_id = db_metadata.load_table_structure(schema)?;
 
     let tree = DbCli::fetch_snowflake_relation(
       psql.clone(),
-      &psql_table_by_name,
+      &psql_table_by_id,
       table,
       values,
       column,
@@ -158,7 +157,7 @@ impl DbCli {
 impl DbCli {
   pub fn fetch_snowflake_relation<'a>(
     psql: Rc<RefCell<PsqlConnection>>,
-    psql_table_by_name: &'a HashMap<String, PsqlTable<'a>>,
+    psql_table_by_id: &'a HashMap<PsqlTableIdentity, PsqlTable<'a>>,
     table: &str,
     values: Vec<String>,
     column: &str,
@@ -168,15 +167,14 @@ impl DbCli {
     let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
 
     let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
-      schema: &schema,
-      table_name: &table,
+      table_id: &PsqlTableIdentity::new(schema, table),
       column_name: &column,
       column_value: values.get(0).unwrap(), // As of now only supports 1 value
     };
 
     // As of now only support 1 row
     let tree: RoseTreeNode<PsqlTableRows> = relation_fetcher
-      .fetch_rose_trees_to_be_inserted(input, psql_table_by_name)?
+      .fetch_rose_trees_to_be_inserted(input, psql_table_by_id)?
       .remove(0);
 
     return Ok(tree);

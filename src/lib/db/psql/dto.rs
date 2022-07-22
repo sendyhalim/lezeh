@@ -59,9 +59,39 @@ impl<'a> PsqlForeignKey<'a> {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTable<'a> {
+pub struct PsqlTableIdentity<'a> {
   pub schema: AnyString<'a>,
   pub name: AnyString<'a>,
+}
+
+impl<'a> PsqlTableIdentity<'a> {
+  pub fn new<S>(schema: S, name: S) -> PsqlTableIdentity<'a>
+  where
+    S: Into<AnyString<'a>>,
+  {
+    return PsqlTableIdentity {
+      schema: schema.into(),
+      name: name.into(),
+    };
+  }
+}
+
+impl std::fmt::Display for PsqlTableIdentity<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return write!(f, "{}.{}", self.schema, self.name);
+  }
+}
+
+impl<'a> Hash for PsqlTableIdentity<'a> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.schema.hash(state);
+    self.name.hash(state);
+  }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct PsqlTable<'a> {
+  pub id: PsqlTableIdentity<'a>,
   pub primary_column: PsqlTableColumn<'a>,
   pub columns: HashSet<PsqlTableColumn<'a>>,
   pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
@@ -81,8 +111,10 @@ impl<'a> PsqlTable<'a> {
     S: Into<AnyString<'a>>,
   {
     return PsqlTable {
-      schema: schema.into(),
-      name: name.into(),
+      id: PsqlTableIdentity {
+        schema: schema.into(),
+        name: name.into(),
+      },
       primary_column,
       columns,
       referenced_fk_by_constraint_name,
@@ -107,7 +139,7 @@ impl<'a> Eq for PsqlTableRows<'a> {}
 
 impl<'a> Hash for PsqlTableRows<'a> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    return self.table.name.hash(state);
+    self.table.id.hash(state);
   }
 }
 
