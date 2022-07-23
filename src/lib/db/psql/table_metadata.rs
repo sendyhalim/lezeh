@@ -33,7 +33,7 @@ pub enum QueryError {
 }
 
 pub struct FetchRowInput<'a> {
-  pub table_id: &'a PsqlTableIdentity<'a>,
+  pub table_id: &'a PsqlTableIdentity,
   pub column_name: &'a str,
   pub column_value: &'a PsqlParamValue,
 }
@@ -41,7 +41,7 @@ pub struct FetchRowInput<'a> {
 impl<'b> FetchRowInput<'b> {
   pub fn psql_param_value<'a>(
     column_value: String,
-    column: PsqlTableColumn<'a>,
+    column: PsqlTableColumn,
   ) -> ResultAnyError<PsqlParamValue> {
     let data_type: String = column.data_type.to_string();
     let mut value: PsqlParamValue = Box::new(column_value.clone());
@@ -107,7 +107,7 @@ impl Query {
 
   pub fn get_column_metadata<'a>(
     &mut self,
-    table_id: &PsqlTableIdentity<'a>,
+    table_id: &PsqlTableIdentity,
     column_name: &str,
   ) -> ResultAnyError<Row> {
     let query_str =
@@ -130,15 +130,33 @@ impl Query {
   }
 }
 
-pub struct TableMetadata {
+#[cfg_attr(test, mockall::automock)]
+pub trait TableMetadata {
+  fn get_column(
+    &self,
+    table_id: &PsqlTableIdentity,
+    column_name: &str,
+  ) -> ResultAnyError<PsqlTableColumn>;
+
+  fn get_psql_table_rows<'a>(
+    &self,
+    table: PsqlTable,
+    column_name: &str,
+    id: &PsqlParamValue,
+  ) -> ResultAnyError<PsqlTableRows>;
+
+  fn get_one_row(&self, table: &PsqlTable, column_name: &str, id: &str) -> ResultAnyError<Row>;
+}
+
+pub struct TableMetadataImpl {
   /// We know that we own this query so it's ok
   /// to directl borrow_mut() without checking ownership
   query: RefCell<Query>,
 }
 
-impl TableMetadata {
-  pub fn new(psql_connection: Rc<RefCell<PsqlConnection>>) -> TableMetadata {
-    return TableMetadata {
+impl TableMetadataImpl {
+  pub fn new(psql_connection: Rc<RefCell<PsqlConnection>>) -> TableMetadataImpl {
+    return TableMetadataImpl {
       query: RefCell::new(Query {
         connection: psql_connection,
       }),
@@ -146,10 +164,10 @@ impl TableMetadata {
   }
 }
 
-impl TableMetadata {
-  pub fn get_column<'a>(
+impl TableMetadata for TableMetadataImpl {
+  fn get_column(
     &self,
-    table_id: &PsqlTableIdentity<'a>,
+    table_id: &PsqlTableIdentity,
     column_name: &str,
   ) -> ResultAnyError<PsqlTableColumn> {
     let row = self
@@ -162,12 +180,12 @@ impl TableMetadata {
     return Ok(column);
   }
 
-  pub fn get_psql_table_rows<'a>(
+  fn get_psql_table_rows(
     &self,
-    table: PsqlTable<'a>,
+    table: PsqlTable,
     column_name: &str,
     id: &PsqlParamValue,
-  ) -> ResultAnyError<PsqlTableRows<'a>> {
+  ) -> ResultAnyError<PsqlTableRows> {
     let rows = self.query.borrow_mut().find_rows(&FetchRowInput {
       table_id: &table.id,
       column_name,
@@ -180,12 +198,7 @@ impl TableMetadata {
     });
   }
 
-  pub fn get_one_row<'a>(
-    &self,
-    table: &PsqlTable<'a>,
-    column_name: &str,
-    id: &str,
-  ) -> ResultAnyError<Row> {
+  fn get_one_row<'a>(&self, table: &PsqlTable, column_name: &str, id: &str) -> ResultAnyError<Row> {
     let column = self.get_column(&table.id, column_name)?;
     let id: PsqlParamValue = FetchRowInput::psql_param_value(id.to_string(), column)?;
 
@@ -210,13 +223,13 @@ pub struct RowUtil;
 impl RowUtil {
   pub fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> PsqlParamValue {
     if id_column_spec.data_type == "integer" {
-      return Box::new(row.get::<_, i32>(id_column_spec.name.as_ref()));
+      return Box::new(row.get::<_, i32>(id_column_spec.name.as_str()));
     }
 
     if id_column_spec.data_type == "uuid" {
-      return Box::new(row.get::<_, Uuid>(id_column_spec.name.as_ref()));
+      return Box::new(row.get::<_, Uuid>(id_column_spec.name.as_str()));
     }
 
-    return Box::new(row.get::<_, String>(id_column_spec.name.as_ref()));
+    return Box::new(row.get::<_, String>(id_column_spec.name.as_str()));
   }
 }

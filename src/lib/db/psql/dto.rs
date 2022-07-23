@@ -14,75 +14,75 @@ use crate::common::types::ResultAnyError;
 type AnyString<'a> = Cow<'a, str>;
 
 #[derive(PartialEq, Hash, Eq, Debug, Clone)]
-pub struct PsqlTableColumn<'a> {
-  pub name: AnyString<'a>,
-  pub data_type: AnyString<'a>,
+pub struct PsqlTableColumn {
+  pub name: String,
+  pub data_type: String,
 }
 
-impl<'a> PsqlTableColumn<'a> {
-  pub fn new<S>(name: S, data_type: S) -> PsqlTableColumn<'a>
+impl PsqlTableColumn {
+  pub fn new<'a, S>(name: S, data_type: S) -> PsqlTableColumn
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlTableColumn {
-      name: name.into(),
-      data_type: data_type.into(),
+      name: name.into().to_string(),
+      data_type: data_type.into().to_string(),
     };
   }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlForeignKey<'a> {
-  pub name: AnyString<'a>,
-  pub column: PsqlTableColumn<'a>,
-  pub foreign_table_schema: AnyString<'a>,
-  pub foreign_table_name: AnyString<'a>,
+pub struct PsqlForeignKey {
+  pub name: String,
+  pub column: PsqlTableColumn,
+  pub foreign_table_schema: String,
+  pub foreign_table_name: String,
 }
 
-impl<'a> PsqlForeignKey<'a> {
-  pub fn new<S>(
+impl PsqlForeignKey {
+  pub fn new<'a, S>(
     name: S,
-    column: PsqlTableColumn<'a>,
+    column: PsqlTableColumn,
     foreign_table_schema: S,
     foreign_table_name: S,
-  ) -> PsqlForeignKey<'a>
+  ) -> PsqlForeignKey
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlForeignKey {
-      name: name.into(),
+      name: name.into().to_string(),
       column,
-      foreign_table_schema: foreign_table_schema.into(),
-      foreign_table_name: foreign_table_name.into(),
+      foreign_table_schema: foreign_table_schema.into().to_string(),
+      foreign_table_name: foreign_table_name.into().to_string(),
     };
   }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTableIdentity<'a> {
-  pub schema: AnyString<'a>,
-  pub name: AnyString<'a>,
+pub struct PsqlTableIdentity {
+  pub schema: String,
+  pub name: String,
 }
 
-impl<'a> PsqlTableIdentity<'a> {
-  pub fn new<S>(schema: S, name: S) -> PsqlTableIdentity<'a>
+impl PsqlTableIdentity {
+  pub fn new<'a, S>(schema: S, name: S) -> PsqlTableIdentity
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlTableIdentity {
-      schema: schema.into(),
-      name: name.into(),
+      schema: schema.into().to_string(),
+      name: name.into().to_string(),
     };
   }
 }
 
-impl std::fmt::Display for PsqlTableIdentity<'_> {
+impl std::fmt::Display for PsqlTableIdentity {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     return write!(f, "{}.{}", self.schema, self.name);
   }
 }
 
-impl<'a> Hash for PsqlTableIdentity<'a> {
+impl Hash for PsqlTableIdentity {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.schema.hash(state);
     self.name.hash(state);
@@ -90,31 +90,28 @@ impl<'a> Hash for PsqlTableIdentity<'a> {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTable<'a> {
-  pub id: PsqlTableIdentity<'a>,
-  pub primary_column: PsqlTableColumn<'a>,
-  pub columns: HashSet<PsqlTableColumn<'a>>,
-  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
+pub struct PsqlTable {
+  pub id: PsqlTableIdentity,
+  pub primary_column: PsqlTableColumn,
+  pub columns: HashSet<PsqlTableColumn>,
+  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
 }
 
-impl<'a> PsqlTable<'a> {
-  pub fn new<S>(
+impl PsqlTable {
+  pub fn new<'a, S>(
     schema: S,
     name: S,
-    primary_column: PsqlTableColumn<'a>,
-    columns: HashSet<PsqlTableColumn<'a>>,
-    referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-    referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-  ) -> PsqlTable<'a>
+    primary_column: PsqlTableColumn,
+    columns: HashSet<PsqlTableColumn>,
+    referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+    referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+  ) -> PsqlTable
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlTable {
-      id: PsqlTableIdentity {
-        schema: schema.into(),
-        name: name.into(),
-      },
+      id: PsqlTableIdentity::new(schema, name),
       primary_column,
       columns,
       referenced_fk_by_constraint_name,
@@ -124,20 +121,20 @@ impl<'a> PsqlTable<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct PsqlTableRows<'a> {
-  pub table: PsqlTable<'a>,
+pub struct PsqlTableRows {
+  pub table: PsqlTable,
   pub rows: Vec<Rc<Row>>,
 }
 
-impl<'a> PartialEq for PsqlTableRows<'a> {
+impl PartialEq for PsqlTableRows {
   fn eq(&self, other: &Self) -> bool {
     return self.table == other.table;
   }
 }
 
-impl<'a> Eq for PsqlTableRows<'a> {}
+impl Eq for PsqlTableRows {}
 
-impl<'a> Hash for PsqlTableRows<'a> {
+impl Hash for PsqlTableRows {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.table.id.hash(state);
   }

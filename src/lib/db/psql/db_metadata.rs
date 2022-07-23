@@ -91,9 +91,7 @@ impl Query {
     return Ok(fk_info_rows);
   }
 
-  fn get_table_by_id<'a, 'b>(
-    &'a mut self,
-  ) -> ResultAnyError<HashMap<PsqlTableIdentity<'b>, PsqlTable<'b>>> {
+  fn get_table_by_id(&mut self) -> ResultAnyError<HashMap<PsqlTableIdentity, PsqlTable>> {
     let rows: Vec<Row> = self.connection.borrow_mut().get().query(
       "
       SELECT
@@ -157,10 +155,10 @@ impl DbMetadata {
 }
 
 impl DbMetadata {
-  pub fn load_table_structure<'a, 'b>(
+  pub fn load_table_structure(
     &self,
     schema: &str,
-  ) -> ResultAnyError<HashMap<PsqlTableIdentity, PsqlTable<'b>>> {
+  ) -> ResultAnyError<HashMap<PsqlTableIdentity, PsqlTable>> {
     let fk_info_rows = self.query.borrow_mut().fetch_fk_info(schema)?;
 
     let mut table_by_id = self.query.borrow_mut().get_table_by_id()?;
@@ -236,8 +234,8 @@ mod test {
   use std::borrow::Cow;
   use std::collections::HashSet;
 
-  impl<'a> PsqlTable<'a> {
-    fn basic<S>(schema: S, name: S, primary_column: PsqlTableColumn<'a>) -> PsqlTable
+  impl PsqlTable {
+    fn basic<'a, S>(schema: S, name: S, primary_column: PsqlTableColumn) -> PsqlTable
     where
       S: Into<Cow<'a, str>>,
     {

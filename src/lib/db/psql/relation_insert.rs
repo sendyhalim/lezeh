@@ -13,7 +13,7 @@ use crate::db::psql::dto::PsqlTableRows;
 use crate::db::psql::dto::Uuid;
 
 pub struct TableInsertStatement<'a> {
-  table: PsqlTable<'a>,
+  table: PsqlTable,
   columns: TableInsertRowColumns<'a>,
   row_values: Vec<TableInsertRowValues>,
 }

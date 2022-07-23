@@ -18,7 +18,7 @@ use crate::db::psql;
 use crate::db::psql::connection::*;
 use crate::db::psql::db_metadata::DbMetadata;
 use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity, PsqlTableRows};
-use crate::db::psql::table_metadata::TableMetadata;
+use crate::db::psql::table_metadata::TableMetadataImpl;
 
 pub struct DbCli {}
 
@@ -155,15 +155,15 @@ impl DbCli {
 
 /// Helper function
 impl DbCli {
-  pub fn fetch_snowflake_relation<'a>(
+  pub fn fetch_snowflake_relation(
     psql: Rc<RefCell<PsqlConnection>>,
-    psql_table_by_id: &'a HashMap<PsqlTableIdentity, PsqlTable<'a>>,
+    psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
     table: &str,
     values: Vec<String>,
     column: &str,
     schema: &str,
-  ) -> ResultAnyError<RoseTreeNode<PsqlTableRows<'a>>> {
-    let table_metadata = TableMetadata::new(psql);
+  ) -> ResultAnyError<RoseTreeNode<PsqlTableRows>> {
+    let table_metadata = Box::new(TableMetadataImpl::new(psql));
     let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
 
     let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
