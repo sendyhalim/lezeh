@@ -144,6 +144,12 @@ impl DbCli {
 
     let nodes_by_level: HashMap<i32, HashSet<_>> = RoseTreeNode::nodes_by_level(tree);
 
+    println!(
+      "AFTER_NODES_BY_LEVEL level {} child {}",
+      2,
+      nodes_by_level.get(&2).unwrap().len()
+    );
+
     let statements: Vec<String> =
       psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
 

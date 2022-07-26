@@ -4,10 +4,12 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use chrono::{NaiveDate, NaiveDateTime};
 use postgres::types::to_sql_checked;
 use postgres::types::FromSql;
 use postgres::types::ToSql;
 use postgres::Row;
+use postgres_types::Type as PsqlType;
 
 use crate::common::types::ResultAnyError;
 
@@ -137,6 +139,15 @@ impl Eq for PsqlTableRows {}
 impl Hash for PsqlTableRows {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.table.id.hash(state);
+
+    for row in self.rows.iter() {
+      let sink = row.get::<'_, _, FromSqlSink>("id");
+
+      // TODO: NOT GOOD, find better ways
+      let id = sink.to_string_for_statement().unwrap();
+
+      id.hash(state);
+    }
   }
 }
 
@@ -203,6 +214,103 @@ impl ToString for Uuid {
       .into_uuid()
       .to_string();
     // return String::from_utf8_lossy(&self.bytes).to_string();
+  }
+}
+
+/// Structure that act as a sink to drain bytes
+/// from postgres::row::Row
+pub struct FromSqlSink {
+  raw: Vec<u8>,
+  ty: Option<postgres::types::Type>, // None if null
+}
+
+impl<'a> FromSql<'a> for FromSqlSink {
+  fn from_sql(
+    ty: &PsqlType,
+    raw: &'a [u8],
+  ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    let sink = FromSqlSink {
+      raw: raw.to_owned(),
+      ty: Some(ty.to_owned()),
+    };
+
+    return Ok(sink);
+  }
+
+  fn from_sql_null(_ty: &PsqlType) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    return Ok(FromSqlSink {
+      raw: vec![],
+      ty: None,
+    });
+  }
+
+  fn accepts(_ty: &PsqlType) -> bool {
+    return true;
+  }
+}
+
+impl FromSqlSink {
+  pub fn escape_string<T>(val: T) -> String
+  where
+    T: ToString,
+  {
+    // https://github.com/sfackler/rust-postgres/pull/702
+    return postgres_protocol::escape::escape_literal(&val.to_string());
+  }
+
+  pub fn to_string_for_statement(&self) -> ResultAnyError<String> {
+    if self.ty.is_none() {
+      return Ok("null".into());
+    }
+
+    let ty: &PsqlType = self.ty.as_ref().unwrap();
+
+    return match *ty {
+      PsqlType::BOOL => postgres_protocol::types::bool_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::INT4 => postgres_protocol::types::int4_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::INT2 => postgres_protocol::types::int2_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::INT8 => postgres_protocol::types::int8_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      // https://github.com/sfackler/rust-postgres/blob/master/postgres-types/src/chrono_04.rs
+      PsqlType::DATE => {
+        return NaiveDate::from_sql(ty, &self.raw[..])
+          .map(FromSqlSink::escape_string)
+          .map_err(anyhow::Error::msg);
+      }
+
+      PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
+        return NaiveDateTime::from_sql(ty, &self.raw[..])
+          .map(FromSqlSink::escape_string)
+          .map_err(anyhow::Error::msg);
+      }
+
+      PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&ty, &self.raw)
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::UUID => {
+        return Uuid::from_sql(ty, &self.raw)
+          .map(|val| {
+            return format!("'{}'", val.to_string());
+          })
+          .map_err(anyhow::Error::msg);
+      }
+
+      _ => postgres_protocol::types::text_from_sql(&self.raw[..])
+        .map(FromSqlSink::escape_string)
+        .map_err(anyhow::Error::msg),
+    };
   }
 }
 

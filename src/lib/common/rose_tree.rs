@@ -106,6 +106,7 @@ where
       // Drain first the temp into a vec
       let children: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
 
+      println!("level {} child {}", level, &children.len());
       for mut child in children.into_iter() {
         let parents_by_level_from_current_child: HashMap<i32, HashSet<_>> =
           RoseTreeNode::parents_by_level(child.clone());
@@ -129,7 +130,11 @@ where
 
         let entry: &mut HashSet<_> = children_by_level.entry(level).or_insert(Default::default());
 
-        entry.insert(child.value);
+        let inserted = entry.insert(child.value);
+
+        if level == 2 {
+          println!("Inserted {}", inserted);
+        }
       }
     }
 
@@ -201,10 +206,12 @@ mod test {
         let mut child_a = RoseTreeNode::new("level_1_child_a");
         let mut child_b = RoseTreeNode::new("level_1_child_b");
         let mut level_2_child_a = RoseTreeNode::new("level_2_child_a");
+        let level_2_child_b = RoseTreeNode::new("level_2_child_b");
 
         level_2_child_a.set_parents(vec![RoseTreeNode::new("level_1_parent_x")]);
 
         child_a.set_children(vec![level_2_child_a.clone()]);
+        child_b.set_children(vec![level_2_child_b.clone()]);
         child_b.set_parents(vec![RoseTreeNode::new("level_0_parent_b")]);
 
         node.set_children(vec![child_a, child_b.clone()]);
@@ -214,7 +221,7 @@ mod test {
 
         let expected_children_structure = hashmap_literal! {
           1 => vec!["level_1_child_a", "level_1_child_b"].into_iter().collect(),
-          2 => vec!["level_2_child_a"].into_iter().collect(),
+          2 => vec!["level_2_child_a", "level_2_child_b"].into_iter().collect(),
         };
 
         let expected_parents_structure = hashmap_literal! {
