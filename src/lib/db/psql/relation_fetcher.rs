@@ -79,14 +79,7 @@ impl RelationFetcher {
       row: row.clone(),
     });
 
-    let mut fetched_table_by_id: HashMap<PsqlTableIdentity, PsqlTable> = Default::default();
-
-    let parents = self.fetch_referencing_rows(
-      current_table.clone(),
-      RowUtil::get_id_from_row(&row, &current_table.primary_column),
-      &psql_table_by_id,
-      &mut fetched_table_by_id,
-    )?;
+    let parents = self.fetch_referencing_rows(&row_node.value, &psql_table_by_id)?;
 
     row_node.set_parents(parents);
 
@@ -105,15 +98,8 @@ impl RelationFetcher {
     //     otherwise stop
 
     // Reset for current table bcs we're doing double fetch here
-    fetched_table_by_id.remove(&current_table.id);
 
-    let children = self.fetch_referenced_rows(
-      current_table.clone(),
-      &current_table.primary_column,
-      RowUtil::get_id_from_row(&row, &current_table.primary_column),
-      &psql_table_by_id,
-      &mut fetched_table_by_id,
-    )?;
+    let children = self.fetch_referenced_rows(&row_node.value, &psql_table_by_id)?;
 
     row_node.set_children(children);
 
@@ -122,164 +108,80 @@ impl RelationFetcher {
 
   fn fetch_referencing_rows(
     &mut self,
-    referencing_fk_by_constraint_name: &HashMap<String, PsqlForeignKey>,
-    table: PsqlTable,
-    current_row: &Rc<Row>,
+    current_row: &PsqlTableRow,
     psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
-    fetched_table_by_id: &mut HashMap<PsqlTableIdentity, PsqlTable>,
   ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRow>>> {
-    // if fetched_table_by_id.contains_key(&table.id) {
-    // return Ok(Default::default());
-    // }
-
-    // fetched_table_by_id.insert(table.id.clone(), table.clone());
-
     // This method should be called from lower level, so we just need to go to upper level
-    let parents: Vec<RoseTreeNode<PsqlTableRow>> = referencing_fk_by_constraint_name
-      .iter()
-      .flat_map(|(_key, psql_foreign_key)| {
-        let foreign_table_id = PsqlTableIdentity::new(
-          psql_foreign_key.foreign_table_schema.clone(),
-          psql_foreign_key.foreign_table_name.clone(),
-        );
+    let mut parents: Vec<RoseTreeNode<PsqlTableRow>> = Default::default();
 
-        let foreign_table = psql_table_by_id[&foreign_table_id].clone();
+    for (_key, psql_foreign_key) in current_row.table.referencing_fk_by_constraint_name.clone() {
+      let foreign_table_id = PsqlTableIdentity::new(
+        psql_foreign_key.foreign_table_schema.clone(),
+        psql_foreign_key.foreign_table_name.clone(),
+      );
 
-        let mut parent_rows = self.fetch_rows_as_rose_trees(
-          foreign_table.clone(),
-          &foreign_table.primary_column.name,
-          &RowUtil::get_id_from_row(&current_row, &psql_foreign_key.column),
-        )?;
+      let foreign_table = psql_table_by_id[&foreign_table_id].clone();
 
-        return parent_rows
-          .iter_mut()
-          .map(|parent_row| {
-            return self
-              .fetch_referencing_rows(
-                &foreign_table.referencing_fk_by_constraint_name,
-                psql_table_by_id[&foreign_table_id].clone(),
-                &parent_row.value.row,
-                psql_table_by_id,
-                fetched_table_by_id,
-              )
-              .unwrap(); // TODO handle gracefully, convert Vec<Result<E, T>> to Result<Vec<T>, E>
-          })
-          .collect();
-      })
-      .collect();
+      let mut parents_per_fk = self.fetch_rows_as_rose_trees(
+        foreign_table.clone(),
+        &foreign_table.primary_column.name,
+        &RowUtil::get_id_from_row(&current_row.row, &psql_foreign_key.column),
+      )?;
+
+      for parent_row in parents_per_fk.iter_mut() {
+        let grand_parents = self
+          .fetch_referencing_rows(&parent_row.value, psql_table_by_id)
+          .unwrap();
+
+        parent_row.set_parents(grand_parents);
+      }
+
+      parents.extend(parents_per_fk.drain(..));
+    }
 
     return Ok(parents);
-
-    // for node in rose_trees.iter_mut() {
-    //   // This method should be called from lower level, so we just need to go to upper level
-    //   let parents: Vec<RoseTreeNode<PsqlTableRow>> = node
-    //     .value
-    //     .table
-    //     .referencing_fk_by_constraint_name
-    //     .iter()
-    //     .flat_map(|(_key, psql_foreign_key)| {
-    //       let foreign_table_id = PsqlTableIdentity::new(
-    //         psql_foreign_key.foreign_table_schema.clone(),
-    //         psql_foreign_key.foreign_table_name.clone(),
-    //       );
-
-    //       return self
-    //         .fetch_referencing_rows(
-    //           psql_table_by_id[&foreign_table_id].clone(),
-    //           RowUtil::get_id_from_row(&node.value.row, &psql_foreign_key.column),
-    //           psql_table_by_id,
-    //           fetched_table_by_id,
-    //         )
-    //         .unwrap(); // TODO handle gracefully, convert Vec<Result<E, T>> to Result<Vec<T>, E>
-    //     })
-    //     .collect();
-
-    //   node.set_parents(parents);
-    // }
-
-    // return Ok(rose_trees);
   }
 
   /// Fetch child rows, it will also populate other parents' (siblings of current node)
   /// of the current child rows
   fn fetch_referenced_rows(
     &mut self,
-    table: PsqlTable,
-    fk_column: &PsqlTableColumn,
-    id: PsqlParamValue,
+    current_row: &PsqlTableRow,
     psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
-    fetched_table_by_id: &mut HashMap<PsqlTableIdentity, PsqlTable>,
   ) -> ResultAnyError<Vec<RoseTreeNode<PsqlTableRow>>> {
-    // if fetched_table_by_id.contains_key(&table.id) {
-    // return Ok(Default::default());
-    // }
+    let mut children: Vec<RoseTreeNode<PsqlTableRow>> = Default::default();
+    let table = &current_row.table;
 
-    // fetched_table_by_id.insert(table.id.clone(), table.clone());
-
-    let mut rose_trees = self.fetch_rows_as_rose_trees(table.clone(), &fk_column.name, &id)?;
-
-    if table.id.name == "orders" || table.id.name == "order_items" {
-      println!(
-        "Query {:?} {:?} is-empty {:?}",
-        table.id.name,
-        id,
-        rose_trees.is_empty()
+    for (_key, psql_foreign_key) in table.referenced_fk_by_constraint_name.clone() {
+      let foreign_table_id = PsqlTableIdentity::new(
+        psql_foreign_key.foreign_table_schema.clone(),
+        psql_foreign_key.foreign_table_name.clone(),
       );
+
+      let foreign_table = psql_table_by_id[&foreign_table_id].clone();
+
+      let mut children_per_fk = self.fetch_rows_as_rose_trees(
+        foreign_table.clone(),
+        &psql_foreign_key.column.name,
+        &RowUtil::get_id_from_row(&current_row.row, &table.primary_column),
+      )?;
+
+      for child_row in children_per_fk.iter_mut() {
+        let parents = self.fetch_referencing_rows(&child_row.value, psql_table_by_id)?;
+
+        child_row.set_parents(parents);
+
+        let grand_children = self
+          .fetch_referenced_rows(&child_row.value, psql_table_by_id)
+          .unwrap();
+
+        child_row.set_children(grand_children);
+      }
+
+      children.extend(children_per_fk.drain(..));
     }
 
-    for node in rose_trees.iter_mut() {
-      // This method should be called from oower level, so we just need to go to upper level
-      let parents: Vec<RoseTreeNode<PsqlTableRow>> = node
-        .value
-        .table
-        .referencing_fk_by_constraint_name
-        .iter()
-        .flat_map(|(_key, psql_foreign_key)| {
-          let foreign_table_id = PsqlTableIdentity::new(
-            psql_foreign_key.foreign_table_schema.clone(),
-            psql_foreign_key.foreign_table_name.clone(),
-          );
-
-          return self
-            .fetch_referencing_rows(
-              psql_table_by_id[&foreign_table_id].clone(),
-              RowUtil::get_id_from_row(&node.value.row, &psql_foreign_key.column),
-              psql_table_by_id,
-              fetched_table_by_id,
-            )
-            .unwrap();
-        })
-        .collect();
-
-      node.set_parents(parents);
-
-      let primary_column = table.primary_column.clone();
-
-      let children: Vec<RoseTreeNode<PsqlTableRow>> = table
-        .referenced_fk_by_constraint_name
-        .iter()
-        .flat_map(|(_key, psql_foreign_key)| {
-          let foreign_table_id = PsqlTableIdentity::new(
-            psql_foreign_key.foreign_table_schema.clone(),
-            psql_foreign_key.foreign_table_name.clone(),
-          );
-
-          return self
-            .fetch_referenced_rows(
-              psql_table_by_id[&foreign_table_id].clone(),
-              &psql_foreign_key.column,
-              RowUtil::get_id_from_row(&node.value.row, &primary_column),
-              psql_table_by_id,
-              fetched_table_by_id,
-            )
-            .unwrap();
-        })
-        .collect();
-
-      node.set_children(children);
-    }
-
-    return Ok(rose_trees);
+    return Ok(children);
   }
 
   fn fetch_rows_as_rose_trees<'a>(
@@ -338,9 +240,10 @@ impl RelationFetcher {
 //         .expect_get_psql_table_rows()
 //         .times(1)
 //         .return_once(|_, _, _| {
-//           Ok(PsqlTableRows {
+//           Ok(PsqlTableRow {
+//             row_id_representation: "foo".into(),
 //             table: create_dummy_table(),
-//             rows: Default::default(),
+//             row: Default::default(),
 //           })
 //         });
 //
