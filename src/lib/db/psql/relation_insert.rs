@@ -9,7 +9,7 @@ use crate::common::types::ResultAnyError;
 use crate::db::psql::dto::FromSqlSink;
 use crate::db::psql::dto::PsqlTable;
 use crate::db::psql::dto::PsqlTableIdentity;
-use crate::db::psql::dto::PsqlTableRows;
+use crate::db::psql::dto::PsqlTableRow;
 
 pub struct TableInsertStatement<'a> {
   table: PsqlTable,
@@ -76,7 +76,7 @@ pub struct RelationInsert {}
 
 impl RelationInsert {
   pub fn into_insert_statements(
-    rows_by_level: HashMap<i32, HashSet<PsqlTableRows>>,
+    rows_by_level: HashMap<i32, HashSet<PsqlTableRow>>,
   ) -> ResultAnyError<Vec<String>> {
     let mut levels: Vec<&i32> = rows_by_level.keys().collect();
 
@@ -85,7 +85,7 @@ impl RelationInsert {
     let insert_statements: ResultAnyError<Vec<Vec<String>>> = levels
       .iter()
       .map(|level| {
-        let rows: &HashSet<PsqlTableRows> = rows_by_level.get(level).unwrap();
+        let rows: &HashSet<PsqlTableRow> = rows_by_level.get(level).unwrap();
 
         return RelationInsert::table_rows_into_insert_statement(rows);
       })
@@ -95,7 +95,7 @@ impl RelationInsert {
   }
 
   pub fn table_rows_into_insert_statement(
-    rows: &HashSet<PsqlTableRows>,
+    rows: &HashSet<PsqlTableRow>,
   ) -> ResultAnyError<Vec<String>> {
     // Rows of the same table can be scattered through vec of psql table rows,
     // remember Vec<PsqlTableRows> meaning Vec<Vec<Row>> due to PsqlTableRows
@@ -106,18 +106,16 @@ impl RelationInsert {
       .map(|row| (row.table.id.clone(), row.table.clone()))
       .collect();
 
-    let psql_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<Vec<Rc<Row>>>> = rows
+    let psql_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<Rc<Row>>> = rows
       .iter()
-      .map(|psql_table_row| (psql_table_row.table.id.clone(), psql_table_row.rows.clone()))
+      .map(|psql_table_row| (psql_table_row.table.id.clone(), psql_table_row.row.clone()))
       .into_group_map();
 
     let rows_by_table_id: HashMap<PsqlTableIdentity, Vec<Rc<Row>>> = psql_rows_by_table_id
       .into_iter()
-      .map(
-        |(table_identity, rows_2d): (PsqlTableIdentity, Vec<Vec<Rc<Row>>>)| {
-          return (table_identity, rows_2d.into_iter().flatten().collect_vec());
-        },
-      )
+      .map(|(table_identity, row): (PsqlTableIdentity, Vec<Rc<Row>>)| {
+        return (table_identity, row.clone());
+      })
       .collect();
 
     return rows_by_table_id

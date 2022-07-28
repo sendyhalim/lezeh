@@ -123,31 +123,26 @@ impl PsqlTable {
 }
 
 #[derive(Debug, Clone)]
-pub struct PsqlTableRows {
+pub struct PsqlTableRow {
   pub table: PsqlTable,
-  pub rows: Vec<Rc<Row>>,
+  pub row_id_representation: String,
+  pub row: Rc<Row>,
 }
 
-impl PartialEq for PsqlTableRows {
+impl PartialEq for PsqlTableRow {
   fn eq(&self, other: &Self) -> bool {
-    return self.table == other.table;
+    return self.table == other.table && self.row_id_representation == other.row_id_representation;
   }
 }
 
-impl Eq for PsqlTableRows {}
+impl Eq for PsqlTableRow {}
 
-impl Hash for PsqlTableRows {
+impl Hash for PsqlTableRow {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.table.id.hash(state);
+    self.row_id_representation.hash(state);
 
-    for row in self.rows.iter() {
-      let sink = row.get::<'_, _, FromSqlSink>("id");
-
-      // TODO: NOT GOOD, find better ways
-      let id = sink.to_string_for_statement().unwrap();
-
-      id.hash(state);
-    }
+    // println!("hash {} {}", self.table.id, id);
   }
 }
 

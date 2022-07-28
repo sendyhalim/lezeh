@@ -17,7 +17,7 @@ use crate::common::types::ResultAnyError;
 use crate::db::psql;
 use crate::db::psql::connection::*;
 use crate::db::psql::db_metadata::DbMetadata;
-use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity, PsqlTableRows};
+use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity, PsqlTableRow};
 use crate::db::psql::table_metadata::TableMetadataImpl;
 
 pub struct DbCli {}
@@ -142,12 +142,13 @@ impl DbCli {
       schema,
     )?;
 
-    let nodes_by_level: HashMap<i32, HashSet<_>> = RoseTreeNode::nodes_by_level(tree);
+    let nodes_by_level: HashMap<i32, HashSet<PsqlTableRow>> = RoseTreeNode::nodes_by_level(tree);
+
+    println!("available levels {:?}", nodes_by_level.keys());
 
     println!(
-      "AFTER_NODES_BY_LEVEL level {} child {}",
-      2,
-      nodes_by_level.get(&2).unwrap().len()
+      "AFTER_NODES_BY_LEVEL nodes {:?}",
+      nodes_by_level.get(&2).unwrap()
     );
 
     let statements: Vec<String> =
@@ -168,7 +169,7 @@ impl DbCli {
     values: Vec<String>,
     column: &str,
     schema: &str,
-  ) -> ResultAnyError<RoseTreeNode<PsqlTableRows>> {
+  ) -> ResultAnyError<RoseTreeNode<PsqlTableRow>> {
     let table_metadata = Box::new(TableMetadataImpl::new(psql));
     let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
 
@@ -179,7 +180,7 @@ impl DbCli {
     };
 
     // As of now only support 1 row
-    let tree: RoseTreeNode<PsqlTableRows> = relation_fetcher
+    let tree: RoseTreeNode<PsqlTableRow> = relation_fetcher
       .fetch_rose_trees_to_be_inserted(input, psql_table_by_id)?
       .remove(0);
 

@@ -138,12 +138,12 @@ pub trait TableMetadata {
     column_name: &str,
   ) -> ResultAnyError<PsqlTableColumn>;
 
-  fn get_psql_table_rows<'a>(
+  fn get_rows<'a>(
     &self,
     table: PsqlTable,
     column_name: &str,
     id: &PsqlParamValue,
-  ) -> ResultAnyError<PsqlTableRows>;
+  ) -> ResultAnyError<Vec<Row>>;
 
   fn get_one_row(&self, table: &PsqlTable, column_name: &str, id: &str) -> ResultAnyError<Row>;
 }
@@ -180,21 +180,16 @@ impl TableMetadata for TableMetadataImpl {
     return Ok(column);
   }
 
-  fn get_psql_table_rows(
+  fn get_rows(
     &self,
     table: PsqlTable,
     column_name: &str,
     id: &PsqlParamValue,
-  ) -> ResultAnyError<PsqlTableRows> {
-    let rows = self.query.borrow_mut().find_rows(&FetchRowInput {
+  ) -> ResultAnyError<Vec<Row>> {
+    return self.query.borrow_mut().find_rows(&FetchRowInput {
       table_id: &table.id,
       column_name,
       column_value: id,
-    })?;
-
-    return Ok(PsqlTableRows {
-      table: table.clone(),
-      rows: rows.into_iter().map(Rc::new).collect(),
     });
   }
 
