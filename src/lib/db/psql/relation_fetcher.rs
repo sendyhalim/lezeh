@@ -1,13 +1,9 @@
 use std::collections::HashMap;
-use std::rc::Rc;
-
-use postgres::Row;
 
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 use crate::db::psql::dto::*;
 use crate::db::psql::table_metadata::TableMetadata;
-use crate::db::psql::table_metadata::{PsqlParamValue, RowUtil};
 
 pub struct RelationFetcher {
   table_metadata: Box<dyn TableMetadata>,
@@ -39,12 +35,12 @@ impl RelationFetcher {
 
     let psql_table: &PsqlTable = psql_table.unwrap();
 
-    let row: Row =
+    let row: PsqlTableRow =
       self
         .table_metadata
         .get_one_row(psql_table, input.column_name, input.column_value)?;
 
-    let row: Rc<Row> = Rc::new(row);
+    let mut row_node: RoseTreeNode<PsqlTableRow> = RoseTreeNode::new(row);
 
     // We just fetched it, let's just assume naively that the table
     // will still exist right after we fetch it.
@@ -70,14 +66,6 @@ impl RelationFetcher {
     //       register the current table as root table
     //       fetch the current row by
     //          select * from {input.table_name} where id = {input.id}
-
-    let sink = row.get::<'_, _, FromSqlSink>("id");
-
-    let mut row_node: RoseTreeNode<PsqlTableRow> = RoseTreeNode::new(PsqlTableRow {
-      table: current_table.clone(),
-      row_id_representation: sink.to_string_for_statement()?,
-      row: row.clone(),
-    });
 
     let parents = self.fetch_referencing_rows(&row_node.value, &psql_table_by_id)?;
 
@@ -125,7 +113,7 @@ impl RelationFetcher {
       let mut parents_per_fk = self.fetch_rows_as_rose_trees(
         foreign_table.clone(),
         &foreign_table.primary_column.name,
-        &RowUtil::get_id_from_row(&current_row.row, &psql_foreign_key.column),
+        &current_row.get_id(&psql_foreign_key.column),
       )?;
 
       for parent_row in parents_per_fk.iter_mut() {
@@ -163,7 +151,7 @@ impl RelationFetcher {
       let mut children_per_fk = self.fetch_rows_as_rose_trees(
         foreign_table.clone(),
         &psql_foreign_key.column.name,
-        &RowUtil::get_id_from_row(&current_row.row, &table.primary_column),
+        &current_row.get_id(&table.primary_column),
       )?;
 
       for child_row in children_per_fk.iter_mut() {
@@ -194,21 +182,7 @@ impl RelationFetcher {
       .table_metadata
       .get_rows(table.clone(), column_name, id)?;
 
-    let rows = rows
-      .into_iter()
-      .map(|row| {
-        let sink = row.get::<'_, _, FromSqlSink>("id");
-
-        // TODO: NOT GOOD, find better ways
-        let row_id = sink.to_string_for_statement().unwrap();
-
-        return RoseTreeNode::new(PsqlTableRow {
-          table: table.clone(),
-          row_id_representation: row_id,
-          row: Rc::new(row),
-        });
-      })
-      .collect();
+    let rows = rows.into_iter().map(RoseTreeNode::new).collect();
 
     return Ok(rows);
   }
@@ -234,32 +208,31 @@ impl RelationFetcher {
 //
 //     #[test]
 //     fn if_children_is_empty() -> ResultAnyError<()> {
-//       let mut mock_table_metadata = Box::new(MockTableMetadata::new());
+//       let mut current_row = PsqlTableRow {
+//         row_id_representation: "".to_string(),
+//         table: create_dummy_table(),
+//         row: Row::default(),
+//       };
 //
-//       mock_table_metadata
-//         .expect_get_psql_table_rows()
-//         .times(1)
-//         .return_once(|_, _, _| {
-//           Ok(PsqlTableRow {
-//             row_id_representation: "foo".into(),
-//             table: create_dummy_table(),
-//             row: Default::default(),
-//           })
-//         });
+//       // mock_table_metadata
+//       // .expect_get_psql_table_rows()
+//       // .times(1)
+//       // .return_once(|_, _, _| {
+//       // Ok(PsqlTableRow {
+//       // row_id_representation: "foo".into(),
+//       // table: create_dummy_table(),
+//       // row: Default::default(),
+//       // })
+//       // });
 //
-//       let mut relation_fetcher = RelationFetcher::new(mock_table_metadata);
+//       let mut relation_fetcher = RelationFetcher::new(Box::new(MockTableMetadata::default()));
 //
-//       let fk_column = PsqlTableColumn::new("id", "integer");
+//       // let fk_column = PsqlTableColumn::new("id", "integer");
 //
-//       let referenced_rows = relation_fetcher.fetch_referenced_rows(
-//         create_dummy_table(),
-//         &fk_column,
-//         Box::new(1),
-//         &Default::default(),
-//         &mut Default::default(),
-//       )?;
+//       let referenced_rows =
+//         relation_fetcher.fetch_referenced_rows(&current_row, &Default::default())?;
 //
-//       assert_eq!(referenced_rows, None);
+//       assert_eq!(referenced_rows, vec![]);
 //
 //       return Ok(());
 //     }

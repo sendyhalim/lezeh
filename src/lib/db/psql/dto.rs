@@ -14,6 +14,7 @@ use postgres_types::Type as PsqlType;
 use crate::common::types::ResultAnyError;
 
 type AnyString<'a> = Cow<'a, str>;
+pub type PsqlParamValue = Box<dyn ToSql + Sync>;
 
 #[derive(PartialEq, Hash, Eq, Debug, Clone)]
 pub struct PsqlTableColumn {
@@ -126,7 +127,54 @@ impl PsqlTable {
 pub struct PsqlTableRow {
   pub table: PsqlTable,
   pub row_id_representation: String,
-  pub row: Rc<Row>,
+  inner_row: Rc<Row>,
+}
+
+impl PsqlTableRow {
+  pub fn new(table: PsqlTable, row: Rc<Row>) -> PsqlTableRow {
+    let sink = row.get::<'_, _, FromSqlSink>("id");
+
+    // TODO: NOT GOOD, find better ways
+    let row_id = sink.to_string_for_statement().unwrap();
+
+    return PsqlTableRow {
+      table,
+      row_id_representation: row_id,
+      inner_row: row,
+    };
+  }
+}
+
+impl PsqlTableRow {
+  pub fn get_id(&self, id_column_spec: &PsqlTableColumn) -> PsqlParamValue {
+    let inner_row = self.inner_row;
+
+    if id_column_spec.data_type == "integer" {
+      return Box::new(inner_row.get::<_, i32>(id_column_spec.name.as_str()));
+    }
+
+    if id_column_spec.data_type == "uuid" {
+      return Box::new(inner_row.get::<_, Uuid>(id_column_spec.name.as_str()));
+    }
+
+    return Box::new(inner_row.get::<_, String>(id_column_spec.name.as_str()));
+  }
+
+  pub fn get_column_value_map<'a, T>(&'a self) -> HashMap<String, T>
+  where
+    T: FromSql<'a>,
+  {
+    return self
+      .inner_row
+      .columns()
+      .iter()
+      .map(|c| {
+        let val = self.inner_row.get::<'a, _, T>(c.name());
+
+        return (c.name().to_string(), val);
+      })
+      .collect();
+  }
 }
 
 impl PartialEq for PsqlTableRow {

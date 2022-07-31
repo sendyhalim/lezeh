@@ -2,15 +2,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use anyhow::anyhow;
-use postgres::types::ToSql;
 use postgres::Row;
 use thiserror::Error;
 
 use crate::common::types::ResultAnyError;
 use crate::db::psql::connection::PsqlConnection;
 use crate::db::psql::dto::*;
-
-pub type PsqlParamValue = Box<dyn ToSql + Sync>;
 
 pub struct Query {
   connection: Rc<RefCell<PsqlConnection>>,
@@ -143,9 +140,14 @@ pub trait TableMetadata {
     table: PsqlTable,
     column_name: &str,
     id: &PsqlParamValue,
-  ) -> ResultAnyError<Vec<Row>>;
+  ) -> ResultAnyError<Vec<PsqlTableRow>>;
 
-  fn get_one_row(&self, table: &PsqlTable, column_name: &str, id: &str) -> ResultAnyError<Row>;
+  fn get_one_row(
+    &self,
+    table: &PsqlTable,
+    column_name: &str,
+    id: &str,
+  ) -> ResultAnyError<PsqlTableRow>;
 }
 
 pub struct TableMetadataImpl {
@@ -185,15 +187,31 @@ impl TableMetadata for TableMetadataImpl {
     table: PsqlTable,
     column_name: &str,
     id: &PsqlParamValue,
-  ) -> ResultAnyError<Vec<Row>> {
-    return self.query.borrow_mut().find_rows(&FetchRowInput {
-      table_id: &table.id,
-      column_name,
-      column_value: id,
-    });
+  ) -> ResultAnyError<Vec<PsqlTableRow>> {
+    return self
+      .query
+      .borrow_mut()
+      .find_rows(&FetchRowInput {
+        table_id: &table.id,
+        column_name,
+        column_value: id,
+      })
+      .map(|rows| {
+        return rows
+          .into_iter()
+          .map(|inner_row| {
+            return PsqlTableRow::new(table.clone(), Rc::new(inner_row));
+          })
+          .collect();
+      });
   }
 
-  fn get_one_row<'a>(&self, table: &PsqlTable, column_name: &str, id: &str) -> ResultAnyError<Row> {
+  fn get_one_row<'a>(
+    &self,
+    table: &PsqlTable,
+    column_name: &str,
+    id: &str,
+  ) -> ResultAnyError<PsqlTableRow> {
     let column = self.get_column(&table.id, column_name)?;
     let id: PsqlParamValue = FetchRowInput::psql_param_value(id.to_string(), column)?;
 
@@ -203,28 +221,16 @@ impl TableMetadata for TableMetadataImpl {
       column_value: &id,
     })?;
 
-    return row.ok_or_else(|| {
-      anyhow!(QueryError::RowNotFound {
-        table_id: format!("{:#?}", table.id),
-        column: column_name.into(),
-        identifier: format!("{:#?}", id),
+    return row
+      .ok_or_else(|| {
+        anyhow!(QueryError::RowNotFound {
+          table_id: format!("{:#?}", table.id),
+          column: column_name.into(),
+          identifier: format!("{:#?}", id),
+        })
       })
-    });
-  }
-}
-
-pub struct RowUtil;
-
-impl RowUtil {
-  pub fn get_id_from_row(row: &Row, id_column_spec: &PsqlTableColumn) -> PsqlParamValue {
-    if id_column_spec.data_type == "integer" {
-      return Box::new(row.get::<_, i32>(id_column_spec.name.as_str()));
-    }
-
-    if id_column_spec.data_type == "uuid" {
-      return Box::new(row.get::<_, Uuid>(id_column_spec.name.as_str()));
-    }
-
-    return Box::new(row.get::<_, String>(id_column_spec.name.as_str()));
+      .map(|inner_row| {
+        return PsqlTableRow::new(table.clone(), Rc::new(row));
+      });
   }
 }
