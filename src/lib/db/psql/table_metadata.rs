@@ -230,7 +230,7 @@ impl TableMetadata for TableMetadataImpl {
         })
       })
       .map(|inner_row| {
-        return PsqlTableRow::new(table.clone(), Rc::new(row));
+        return PsqlTableRow::new(table.clone(), Rc::new(inner_row));
       });
   }
 }

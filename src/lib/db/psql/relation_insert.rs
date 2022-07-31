@@ -1,9 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
 use itertools::Itertools;
-use postgres::row::Row;
-use postgres::Column;
 
 use crate::common::types::ResultAnyError;
 use crate::db::psql::dto::FromSqlSink;
@@ -11,13 +8,13 @@ use crate::db::psql::dto::PsqlTable;
 use crate::db::psql::dto::PsqlTableIdentity;
 use crate::db::psql::dto::PsqlTableRow;
 
-pub struct TableInsertStatement<'a> {
+pub struct TableInsertStatement {
   table: PsqlTable,
-  columns: TableInsertRowColumns<'a>,
+  columns: TableInsertRowColumns,
   row_values: Vec<TableInsertRowValues>,
 }
 
-impl<'a> std::fmt::Display for TableInsertStatement<'a> {
+impl std::fmt::Display for TableInsertStatement {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     // let template = ;
 
@@ -45,18 +42,13 @@ impl<'a> std::fmt::Display for TableInsertStatement<'a> {
   }
 }
 
-pub struct TableInsertRowColumns<'a> {
-  columns: &'a [Column],
+pub struct TableInsertRowColumns {
+  column_names: Vec<String>,
 }
 
-impl<'a> std::fmt::Display for TableInsertRowColumns<'a> {
+impl std::fmt::Display for TableInsertRowColumns {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let column_string: String = self
-      .columns
-      .iter()
-      .map(|c| String::from(c.name()))
-      .collect::<Vec<String>>()
-      .join(", ");
+    let column_string: String = self.column_names.join(", ");
 
     return write!(f, "{}", column_string);
   }
@@ -106,16 +98,18 @@ impl RelationInsert {
       .map(|row| (row.table.id.clone(), row.table.clone()))
       .collect();
 
-    let psql_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<Rc<Row>>> = rows
+    let psql_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&PsqlTableRow>> = rows
       .iter()
-      .map(|psql_table_row| (psql_table_row.table.id.clone(), psql_table_row.row.clone()))
+      .map(|psql_table_row| (psql_table_row.table.id.clone(), psql_table_row))
       .into_group_map();
 
-    let rows_by_table_id: HashMap<PsqlTableIdentity, Vec<Rc<Row>>> = psql_rows_by_table_id
+    let rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&PsqlTableRow>> = psql_rows_by_table_id
       .into_iter()
-      .map(|(table_identity, row): (PsqlTableIdentity, Vec<Rc<Row>>)| {
-        return (table_identity, row.clone());
-      })
+      .map(
+        |(table_identity, row): (PsqlTableIdentity, Vec<&PsqlTableRow>)| {
+          return (table_identity, row);
+        },
+      )
       .collect();
 
     return rows_by_table_id
@@ -131,23 +125,23 @@ impl RelationInsert {
 
   pub fn table_row_into_insert_statement(
     table: &PsqlTable,
-    rows: &Vec<Rc<Row>>,
+    rows: &Vec<&PsqlTableRow>,
   ) -> ResultAnyError<String> {
-    let first_row: Rc<Row> = rows.get(0).unwrap().clone();
+    let first_row: &PsqlTableRow = rows.get(0).unwrap();
+    let column_value_map: HashMap<String, FromSqlSink> = first_row.get_column_value_map();
     let table_insert_row_columns = TableInsertRowColumns {
-      columns: first_row.columns(),
+      column_names: column_value_map.keys().map(|s| s.to_string()).collect(),
     };
 
     let row_values: Vec<TableInsertRowValues> = rows
       .iter()
       .map(|row| {
-        return table_insert_row_columns
-          .columns
-          .iter()
-          .map(|c| {
-            let sink = row.get::<'_, _, FromSqlSink>(c.name());
+        let column_value_map: HashMap<String, FromSqlSink> = row.get_column_value_map();
 
-            return sink.to_string_for_statement();
+        return column_value_map
+          .values()
+          .map(|from_sql_sink| {
+            return from_sql_sink.to_string_for_statement();
           })
           .collect::<ResultAnyError<Vec<String>>>()
           .map(|values_in_string| {

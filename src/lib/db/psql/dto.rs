@@ -147,7 +147,7 @@ impl PsqlTableRow {
 
 impl PsqlTableRow {
   pub fn get_id(&self, id_column_spec: &PsqlTableColumn) -> PsqlParamValue {
-    let inner_row = self.inner_row;
+    let inner_row = &self.inner_row;
 
     if id_column_spec.data_type == "integer" {
       return Box::new(inner_row.get::<_, i32>(id_column_spec.name.as_str()));
