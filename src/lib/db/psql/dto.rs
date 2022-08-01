@@ -4,85 +4,88 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use chrono::{NaiveDate, NaiveDateTime};
 use postgres::types::to_sql_checked;
 use postgres::types::FromSql;
 use postgres::types::ToSql;
 use postgres::Row;
+use postgres_types::Type as PsqlType;
 
 use crate::common::types::ResultAnyError;
 
 type AnyString<'a> = Cow<'a, str>;
+pub type PsqlParamValue = Box<dyn ToSql + Sync>;
 
 #[derive(PartialEq, Hash, Eq, Debug, Clone)]
-pub struct PsqlTableColumn<'a> {
-  pub name: AnyString<'a>,
-  pub data_type: AnyString<'a>,
+pub struct PsqlTableColumn {
+  pub name: String,
+  pub data_type: String,
 }
 
-impl<'a> PsqlTableColumn<'a> {
-  pub fn new<S>(name: S, data_type: S) -> PsqlTableColumn<'a>
+impl PsqlTableColumn {
+  pub fn new<'a, S>(name: S, data_type: S) -> PsqlTableColumn
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlTableColumn {
-      name: name.into(),
-      data_type: data_type.into(),
+      name: name.into().to_string(),
+      data_type: data_type.into().to_string(),
     };
   }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlForeignKey<'a> {
-  pub name: AnyString<'a>,
-  pub column: PsqlTableColumn<'a>,
-  pub foreign_table_schema: AnyString<'a>,
-  pub foreign_table_name: AnyString<'a>,
+pub struct PsqlForeignKey {
+  pub name: String,
+  pub column: PsqlTableColumn,
+  pub foreign_table_schema: String,
+  pub foreign_table_name: String,
 }
 
-impl<'a> PsqlForeignKey<'a> {
-  pub fn new<S>(
+impl PsqlForeignKey {
+  pub fn new<'a, S>(
     name: S,
-    column: PsqlTableColumn<'a>,
+    column: PsqlTableColumn,
     foreign_table_schema: S,
     foreign_table_name: S,
-  ) -> PsqlForeignKey<'a>
+  ) -> PsqlForeignKey
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlForeignKey {
-      name: name.into(),
+      name: name.into().to_string(),
       column,
-      foreign_table_schema: foreign_table_schema.into(),
-      foreign_table_name: foreign_table_name.into(),
+      foreign_table_schema: foreign_table_schema.into().to_string(),
+      foreign_table_name: foreign_table_name.into().to_string(),
     };
   }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTableIdentity<'a> {
-  pub schema: AnyString<'a>,
-  pub name: AnyString<'a>,
+pub struct PsqlTableIdentity {
+  pub schema: String,
+  pub name: String,
 }
 
-impl<'a> PsqlTableIdentity<'a> {
-  pub fn new<S>(schema: S, name: S) -> PsqlTableIdentity<'a>
+impl PsqlTableIdentity {
+  pub fn new<'a, S>(schema: S, name: S) -> PsqlTableIdentity
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlTableIdentity {
-      schema: schema.into(),
-      name: name.into(),
+      schema: schema.into().to_string(),
+      name: name.into().to_string(),
     };
   }
 }
 
-impl std::fmt::Display for PsqlTableIdentity<'_> {
+impl std::fmt::Display for PsqlTableIdentity {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     return write!(f, "{}.{}", self.schema, self.name);
   }
 }
 
-impl<'a> Hash for PsqlTableIdentity<'a> {
+impl Hash for PsqlTableIdentity {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.schema.hash(state);
     self.name.hash(state);
@@ -90,31 +93,28 @@ impl<'a> Hash for PsqlTableIdentity<'a> {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct PsqlTable<'a> {
-  pub id: PsqlTableIdentity<'a>,
-  pub primary_column: PsqlTableColumn<'a>,
-  pub columns: HashSet<PsqlTableColumn<'a>>,
-  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
+pub struct PsqlTable {
+  pub id: PsqlTableIdentity,
+  pub primary_column: PsqlTableColumn,
+  pub columns: HashSet<PsqlTableColumn>,
+  pub referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+  pub referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
 }
 
-impl<'a> PsqlTable<'a> {
-  pub fn new<S>(
+impl PsqlTable {
+  pub fn new<'a, S>(
     schema: S,
     name: S,
-    primary_column: PsqlTableColumn<'a>,
-    columns: HashSet<PsqlTableColumn<'a>>,
-    referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-    referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey<'a>>,
-  ) -> PsqlTable<'a>
+    primary_column: PsqlTableColumn,
+    columns: HashSet<PsqlTableColumn>,
+    referenced_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+    referencing_fk_by_constraint_name: HashMap<String, PsqlForeignKey>,
+  ) -> PsqlTable
   where
     S: Into<AnyString<'a>>,
   {
     return PsqlTable {
-      id: PsqlTableIdentity {
-        schema: schema.into(),
-        name: name.into(),
-      },
+      id: PsqlTableIdentity::new(schema, name),
       primary_column,
       columns,
       referenced_fk_by_constraint_name,
@@ -124,22 +124,71 @@ impl<'a> PsqlTable<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct PsqlTableRows<'a> {
-  pub table: PsqlTable<'a>,
-  pub rows: Vec<Rc<Row>>,
+pub struct PsqlTableRow {
+  pub table: PsqlTable,
+  pub row_id_representation: String,
+  inner_row: Rc<Row>,
 }
 
-impl<'a> PartialEq for PsqlTableRows<'a> {
-  fn eq(&self, other: &Self) -> bool {
-    return self.table == other.table;
+impl PsqlTableRow {
+  pub fn new(table: PsqlTable, row: Rc<Row>) -> PsqlTableRow {
+    let sink = row.get::<'_, _, FromSqlSink>("id");
+
+    // TODO: NOT GOOD, find better ways
+    let row_id = sink.to_string_for_statement().unwrap();
+
+    return PsqlTableRow {
+      table,
+      row_id_representation: row_id,
+      inner_row: row,
+    };
   }
 }
 
-impl<'a> Eq for PsqlTableRows<'a> {}
+impl PsqlTableRow {
+  pub fn get_id(&self, id_column_spec: &PsqlTableColumn) -> PsqlParamValue {
+    let inner_row = &self.inner_row;
 
-impl<'a> Hash for PsqlTableRows<'a> {
+    if id_column_spec.data_type == "integer" {
+      return Box::new(inner_row.get::<_, i32>(id_column_spec.name.as_str()));
+    }
+
+    if id_column_spec.data_type == "uuid" {
+      return Box::new(inner_row.get::<_, Uuid>(id_column_spec.name.as_str()));
+    }
+
+    return Box::new(inner_row.get::<_, String>(id_column_spec.name.as_str()));
+  }
+
+  pub fn get_column_value_map<'a, T>(&'a self) -> HashMap<String, T>
+  where
+    T: FromSql<'a>,
+  {
+    return self
+      .inner_row
+      .columns()
+      .iter()
+      .map(|c| {
+        let val = self.inner_row.get::<'a, _, T>(c.name());
+
+        return (c.name().to_string(), val);
+      })
+      .collect();
+  }
+}
+
+impl PartialEq for PsqlTableRow {
+  fn eq(&self, other: &Self) -> bool {
+    return self.table == other.table && self.row_id_representation == other.row_id_representation;
+  }
+}
+
+impl Eq for PsqlTableRow {}
+
+impl Hash for PsqlTableRow {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.table.id.hash(state);
+    self.row_id_representation.hash(state);
   }
 }
 
@@ -206,6 +255,103 @@ impl ToString for Uuid {
       .into_uuid()
       .to_string();
     // return String::from_utf8_lossy(&self.bytes).to_string();
+  }
+}
+
+/// Structure that act as a sink to drain bytes
+/// from postgres::row::Row
+pub struct FromSqlSink {
+  raw: Vec<u8>,
+  ty: Option<postgres::types::Type>, // None if null
+}
+
+impl<'a> FromSql<'a> for FromSqlSink {
+  fn from_sql(
+    ty: &PsqlType,
+    raw: &'a [u8],
+  ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    let sink = FromSqlSink {
+      raw: raw.to_owned(),
+      ty: Some(ty.to_owned()),
+    };
+
+    return Ok(sink);
+  }
+
+  fn from_sql_null(_ty: &PsqlType) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+    return Ok(FromSqlSink {
+      raw: vec![],
+      ty: None,
+    });
+  }
+
+  fn accepts(_ty: &PsqlType) -> bool {
+    return true;
+  }
+}
+
+impl FromSqlSink {
+  pub fn escape_string<T>(val: T) -> String
+  where
+    T: ToString,
+  {
+    // https://github.com/sfackler/rust-postgres/pull/702
+    return postgres_protocol::escape::escape_literal(&val.to_string());
+  }
+
+  pub fn to_string_for_statement(&self) -> ResultAnyError<String> {
+    if self.ty.is_none() {
+      return Ok("null".into());
+    }
+
+    let ty: &PsqlType = self.ty.as_ref().unwrap();
+
+    return match *ty {
+      PsqlType::BOOL => postgres_protocol::types::bool_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::INT4 => postgres_protocol::types::int4_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::INT2 => postgres_protocol::types::int2_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::INT8 => postgres_protocol::types::int8_from_sql(&self.raw[..])
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      // https://github.com/sfackler/rust-postgres/blob/master/postgres-types/src/chrono_04.rs
+      PsqlType::DATE => {
+        return NaiveDate::from_sql(ty, &self.raw[..])
+          .map(FromSqlSink::escape_string)
+          .map_err(anyhow::Error::msg);
+      }
+
+      PsqlType::TIMESTAMP | PsqlType::TIMESTAMPTZ => {
+        return NaiveDateTime::from_sql(ty, &self.raw[..])
+          .map(FromSqlSink::escape_string)
+          .map_err(anyhow::Error::msg);
+      }
+
+      PsqlType::NUMERIC => rust_decimal::Decimal::from_sql(&ty, &self.raw)
+        .map(|val| val.to_string())
+        .map_err(anyhow::Error::msg),
+
+      PsqlType::UUID => {
+        return Uuid::from_sql(ty, &self.raw)
+          .map(|val| {
+            return format!("'{}'", val.to_string());
+          })
+          .map_err(anyhow::Error::msg);
+      }
+
+      _ => postgres_protocol::types::text_from_sql(&self.raw[..])
+        .map(FromSqlSink::escape_string)
+        .map_err(anyhow::Error::msg),
+    };
   }
 }
 
