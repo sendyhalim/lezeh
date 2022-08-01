@@ -189,8 +189,6 @@ impl Hash for PsqlTableRow {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.table.id.hash(state);
     self.row_id_representation.hash(state);
-
-    // println!("hash {} {}", self.table.id, id);
   }
 }
 

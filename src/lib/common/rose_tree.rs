@@ -106,18 +106,12 @@ where
       // Drain first the temp into a vec
       let children: Vec<RoseTreeNode<T>> = deque_temp.drain(..).collect();
 
-      println!("level {} child {}", level, &children.len());
       for mut child in children.into_iter() {
         let parents_by_level_from_current_child: HashMap<i32, HashSet<_>> =
           RoseTreeNode::parents_by_level(child.clone());
 
         // Drain parents, we already put it in parents_by_level_from_current_child
         child.parents = vec![];
-
-        // println!(
-        //   "[{:#?}]Constructing parents {:#?}",
-        //   child, parents_by_level_from_current_child
-        // );
 
         for (parent_level, parents) in parents_by_level_from_current_child.into_iter() {
           parents_by_level
@@ -130,11 +124,7 @@ where
 
         let entry: &mut HashSet<_> = children_by_level.entry(level).or_insert(Default::default());
 
-        let inserted = entry.insert(child.value);
-
-        if level == 2 {
-          println!("Inserted {}", inserted);
-        }
+        entry.insert(child.value);
       }
     }
 

@@ -111,7 +111,7 @@ impl DbCli {
     column: &str,
     schema: &str,
     config: Config,
-    logger: Logger,
+    _logger: Logger,
   ) -> ResultAnyError<()> {
     let db_by_name: HashMap<String, DbConfig> = config
       .db_by_name

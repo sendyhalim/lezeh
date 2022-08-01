@@ -42,14 +42,6 @@ impl RelationFetcher {
 
     let mut row_node: RoseTreeNode<PsqlTableRow> = RoseTreeNode::new(row);
 
-    // We just fetched it, let's just assume naively that the table
-    // will still exist right after we fetch it.
-    let current_table: PsqlTable = psql_table_by_id
-      .get(&input.table_id)
-      .ok_or_else(|| format!("Could not get table {}", input.table_id))
-      .unwrap()
-      .clone();
-
     // Fill the relationships in upper layers (parents)
     // ----------------------------------------
     //   check whether it has referencing tables (depends on its parent tables)
