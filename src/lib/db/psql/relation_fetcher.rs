@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
+
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 use crate::db::psql::dto::*;
@@ -30,7 +32,7 @@ impl RelationFetcher {
     let psql_table = psql_table_by_id.get(&input.table_id);
 
     if psql_table.is_none() {
-      return Ok(vec![]);
+      return Err(anyhow!("Table {} not found", input.table_id));
     }
 
     let psql_table: &PsqlTable = psql_table.unwrap();
