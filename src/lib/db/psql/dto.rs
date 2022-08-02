@@ -160,7 +160,11 @@ impl PsqlTableRow {
     return Box::new(inner_row.get::<_, String>(id_column_spec.name.as_str()));
   }
 
-  pub fn get_column_value_map<'a, T>(&'a self) -> HashMap<String, T>
+  pub fn get_column_names(&self) -> Vec<&str> {
+    return self.inner_row.columns().iter().map(|c| c.name()).collect();
+  }
+
+  pub fn get_column_value_map<'a, T>(&'a self) -> HashMap<&str, T>
   where
     T: FromSql<'a>,
   {
@@ -171,7 +175,7 @@ impl PsqlTableRow {
       .map(|c| {
         let val = self.inner_row.get::<'a, _, T>(c.name());
 
-        return (c.name().to_string(), val);
+        return (c.name(), val);
       })
       .collect();
   }

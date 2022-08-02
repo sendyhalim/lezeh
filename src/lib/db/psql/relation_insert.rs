@@ -8,13 +8,13 @@ use crate::db::psql::dto::PsqlTable;
 use crate::db::psql::dto::PsqlTableIdentity;
 use crate::db::psql::dto::PsqlTableRow;
 
-pub struct TableInsertStatement {
+pub struct TableInsertStatement<'a> {
   table: PsqlTable,
-  columns: TableInsertRowColumns,
+  columns: TableInsertRowColumns<'a>,
   row_values: Vec<TableInsertRowValues>,
 }
 
-impl std::fmt::Display for TableInsertStatement {
+impl<'a> std::fmt::Display for TableInsertStatement<'a> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     // let template = ;
 
@@ -42,11 +42,11 @@ impl std::fmt::Display for TableInsertStatement {
   }
 }
 
-pub struct TableInsertRowColumns {
-  column_names: Vec<String>,
+pub struct TableInsertRowColumns<'a> {
+  column_names: Vec<&'a str>,
 }
 
-impl std::fmt::Display for TableInsertRowColumns {
+impl<'a> std::fmt::Display for TableInsertRowColumns<'a> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let column_string: String = self.column_names.join(", ");
 
@@ -128,19 +128,22 @@ impl RelationInsert {
     rows: &Vec<&PsqlTableRow>,
   ) -> ResultAnyError<String> {
     let first_row: &PsqlTableRow = rows.get(0).unwrap();
-    let column_value_map: HashMap<String, FromSqlSink> = first_row.get_column_value_map();
     let table_insert_row_columns = TableInsertRowColumns {
-      column_names: column_value_map.keys().map(|s| s.to_string()).collect(),
+      column_names: first_row.get_column_names(),
     };
 
     let row_values: Vec<TableInsertRowValues> = rows
       .iter()
       .map(|row| {
-        let column_value_map: HashMap<String, FromSqlSink> = row.get_column_value_map();
+        let column_value_map: HashMap<&str, FromSqlSink> = row.get_column_value_map();
 
-        return column_value_map
-          .values()
-          .map(|from_sql_sink| {
+        // Use ordering on table insert row columns to preserve ordering
+        return table_insert_row_columns
+          .column_names
+          .iter()
+          .map(|column_name| {
+            let from_sql_sink = column_value_map.get(column_name).unwrap();
+
             return from_sql_sink.to_string_for_statement();
           })
           .collect::<ResultAnyError<Vec<String>>>()
