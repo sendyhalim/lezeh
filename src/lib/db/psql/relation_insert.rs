@@ -48,7 +48,14 @@ pub struct TableInsertRowColumns<'a> {
 
 impl<'a> std::fmt::Display for TableInsertRowColumns<'a> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let column_string: String = self.column_names.join(", ");
+    let column_string: String = self
+      .column_names
+      .iter()
+      .map(|column_name| {
+        return format!("\"{}\"", column_name);
+      })
+      .collect::<Vec<String>>()
+      .join(", ");
 
     return write!(f, "{}", column_string);
   }
@@ -68,16 +75,28 @@ pub struct RelationInsert {}
 
 impl RelationInsert {
   pub fn into_insert_statements(
-    rows_by_level: HashMap<i32, HashSet<PsqlTableRow>>,
+    mut rows_by_level: HashMap<i32, HashSet<PsqlTableRow>>,
   ) -> ResultAnyError<Vec<String>> {
-    let mut levels: Vec<&i32> = rows_by_level.keys().collect();
+    let mut levels: Vec<i32> = rows_by_level.keys().cloned().collect();
+    let mut insert_statement_map: HashMap<String, bool> = Default::default();
 
     levels.sort();
 
     let insert_statements: ResultAnyError<Vec<Vec<String>>> = levels
       .iter()
       .map(|level| {
-        let rows: &HashSet<PsqlTableRow> = rows_by_level.get(level).unwrap();
+        let rows: &mut HashSet<PsqlTableRow> = rows_by_level.get_mut(level).unwrap();
+
+        rows.retain(|row| {
+          let row_key = format!("{}.{}", row.table.id, row.row_id_representation);
+          let found = insert_statement_map.contains_key(&row_key);
+
+          insert_statement_map.insert(row_key, true);
+
+          // We don't want duplicate insert statement
+          // TODO: Maybe we could use BTreeSet instead?
+          return !found;
+        });
 
         return RelationInsert::table_rows_into_insert_statement(rows);
       })
