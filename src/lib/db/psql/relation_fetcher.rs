@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use anyhow::anyhow;
+use petgraph::graph::Graph;
+use petgraph::graph::NodeIndex;
 
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
@@ -24,6 +27,111 @@ pub struct FetchRowsAsRoseTreeInput<'a> {
 }
 
 impl RelationFetcher {
+  pub fn fetch_as_graphs<'a>(
+    &mut self,
+    input: FetchRowsAsRoseTreeInput,
+    psql_table_by_id: &'a HashMap<PsqlTableIdentity, PsqlTable>,
+  ) -> ResultAnyError<Graph<Rc<PsqlTableRow>, i32>> {
+    let psql_table = psql_table_by_id.get(&input.table_id);
+
+    if psql_table.is_none() {
+      return Err(anyhow!("Table {} not found", input.table_id));
+    }
+
+    let psql_table: &PsqlTable = psql_table.unwrap();
+
+    let row: Rc<PsqlTableRow> = Rc::new(self.table_metadata.get_one_row(
+      psql_table,
+      input.column_name,
+      input.column_value,
+    )?);
+
+    let mut row_graph: Graph<Rc<PsqlTableRow>, i32> = Graph::new();
+
+    let node_index = row_graph.add_node(row.clone());
+
+    // Fill the relationships in upper layers (parents)
+    // ----------------------------------------
+    //   check whether it has referencing tables (depends on its parent tables)
+    //     if yes then
+    //       parent_tables = map referencing tables as parent_table
+    //         parent = fetch go up 1 level by fetch_referencing_rows(
+    //           criteria: {
+    //             id: currentRow[referencing_column]
+    //             table: referencing_table
+    //           },
+    //           current_iteration: parent_table
+    //         )
+    //     otherwise
+    //       register the current table as root table
+    //       fetch the current row by
+    //          select * from {input.table_name} where id = {input.id}
+
+    self.fill_referencing_rows(&mut row_graph, node_index, row.clone(), &psql_table_by_id)?;
+
+    // Fill the relationships in lower layers (parents)
+    // ----------------------------------------
+    //   check whether it has referenced tables (has children tables)
+    //     if yes then
+    //       child_tables = map referenced tables as child_tables
+    //       children = fetch 1 level down by fetch_referenced_rows(
+    //           criteria: {
+    //             id: currentRow[referenced_column]
+    //             table: referenced_table
+    //           },
+    //           current_iteration: child_table
+    //       )
+    //     otherwise stop
+
+    // Reset for current table bcs we're doing double fetch here
+
+    // let children = self.fill_referenced_rows(&mut row_graph, &row_node.value, &psql_table_by_id)?;
+
+    return Ok(row_graph);
+  }
+
+  fn fill_referencing_rows(
+    &mut self,
+    row_graph: &mut Graph<Rc<PsqlTableRow>, i32>,
+    current_row_node_index: NodeIndex,
+    current_row: Rc<PsqlTableRow>,
+    psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
+  ) -> ResultAnyError<()> {
+    // This method should be called from lower level, so we just need to go to upper level
+    for (_key, psql_foreign_key) in current_row.table.referencing_fk_by_constraint_name.clone() {
+      let foreign_table_id = PsqlTableIdentity::new(
+        psql_foreign_key.foreign_table_schema.clone(),
+        psql_foreign_key.foreign_table_name.clone(),
+      );
+
+      let foreign_table = psql_table_by_id[&foreign_table_id].clone();
+
+      let parents: Vec<Rc<PsqlTableRow>> = self
+        .fetch_rows(
+          foreign_table.clone(),
+          &foreign_table.primary_column.name,
+          &current_row.get_id(&psql_foreign_key.column),
+        )?
+        .into_iter()
+        .map(Rc::new)
+        .collect();
+
+      for parent_row in parents.iter() {
+        let parent_node_index = row_graph.add_node(parent_row.clone());
+        row_graph.add_edge(current_row_node_index, parent_node_index, -1);
+
+        self.fill_referencing_rows(
+          row_graph,
+          parent_node_index,
+          parent_row.clone(),
+          psql_table_by_id,
+        )?;
+      }
+    }
+
+    return Ok(());
+  }
+
   pub fn fetch_rose_trees_to_be_inserted<'a>(
     &mut self,
     input: FetchRowsAsRoseTreeInput,
@@ -164,6 +272,19 @@ impl RelationFetcher {
     }
 
     return Ok(children);
+  }
+
+  fn fetch_rows<'a>(
+    &mut self,
+    table: PsqlTable,
+    column_name: &str,
+    id: &PsqlParamValue,
+  ) -> ResultAnyError<Vec<PsqlTableRow>> {
+    let rows = self
+      .table_metadata
+      .get_rows(table.clone(), column_name, id)?;
+
+    return Ok(rows);
   }
 
   fn fetch_rows_as_rose_trees<'a>(
