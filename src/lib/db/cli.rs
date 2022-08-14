@@ -8,6 +8,9 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
+use petgraph::dot::{Config as GraphDotConfig, Dot};
+use petgraph::graph::NodeIndex;
+use petgraph::visit::Bfs;
 use slog::Logger;
 
 use crate::common::config::Config;
@@ -18,6 +21,7 @@ use crate::db::psql;
 use crate::db::psql::connection::*;
 use crate::db::psql::db_metadata::DbMetadata;
 use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity, PsqlTableRow};
+use crate::db::psql::relation_fetcher::RowGraph;
 use crate::db::psql::table_metadata::TableMetadataImpl;
 
 pub struct DbCli {}
@@ -133,11 +137,12 @@ impl DbCli {
     let db_metadata = DbMetadata::new(psql.clone());
     let psql_table_by_id = db_metadata.load_table_structure(schema)?;
 
+    // --------------------------------
     let tree = DbCli::fetch_snowflake_relation(
       psql.clone(),
       &psql_table_by_id,
       table,
-      values,
+      values.clone(),
       column,
       schema,
     )?;
@@ -148,6 +153,33 @@ impl DbCli {
       psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
 
     println!("{}", statements.join("\n"));
+
+    let (graph, root) = DbCli::fetch_snowflake_relation_v2(
+      psql.clone(),
+      &psql_table_by_id,
+      table,
+      values,
+      column,
+      schema,
+    )?;
+
+    println!(
+      "{:?}",
+      Dot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
+    );
+
+    let mut indices = graph.node_indices();
+    while let Some(nx) = indices.next() {
+      println!("hhhhhh {}", graph[nx].table.id);
+    }
+
+    let mut bfs = Bfs::new(&graph, root);
+
+    while let Some(node_index) = bfs.next(&graph) {
+      let psql_table_row: Rc<PsqlTableRow> = graph[node_index].clone();
+
+      println!("table {}", psql_table_row.table.id);
+    }
 
     return Ok(());
   }
@@ -178,5 +210,25 @@ impl DbCli {
       .remove(0);
 
     return Ok(tree);
+  }
+
+  pub fn fetch_snowflake_relation_v2(
+    psql: Rc<RefCell<PsqlConnection>>,
+    psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
+    table: &str,
+    values: Vec<String>,
+    column: &str,
+    schema: &str,
+  ) -> ResultAnyError<(RowGraph, NodeIndex)> {
+    let table_metadata = Box::new(TableMetadataImpl::new(psql));
+    let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
+
+    let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
+      table_id: &PsqlTableIdentity::new(schema, table),
+      column_name: &column,
+      column_value: values.get(0).unwrap(), // As of now only supports 1 value
+    };
+
+    return relation_fetcher.fetch_as_graphs(input, psql_table_by_id);
   }
 }

@@ -61,7 +61,7 @@ impl PsqlForeignKey {
   }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Debug, Clone)]
 pub struct PsqlTableIdentity {
   pub schema: String,
   pub name: String,
@@ -123,11 +123,45 @@ impl PsqlTable {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PsqlTableRow {
   pub table: PsqlTable,
   pub row_id_representation: String,
   inner_row: Rc<Row>,
+}
+
+impl Ord for PsqlTableRow {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    return format!("{}{}", self.table.id, self.row_id_representation).cmp(&format!(
+      "{}{}",
+      other.table.id, other.row_id_representation
+    ));
+  }
+}
+
+impl PartialOrd for PsqlTableRow {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    return format!("{}{}", self.table.id, self.row_id_representation).partial_cmp(&format!(
+      "{}{}",
+      other.table.id, other.row_id_representation
+    ));
+  }
+}
+
+impl std::fmt::Debug for PsqlTableRow {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return write!(f, "{}", self as &dyn std::fmt::Display);
+  }
+}
+
+impl std::fmt::Display for PsqlTableRow {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return write!(
+      f,
+      "{}.{}.{}",
+      self.table.id.schema, self.table.id.name, self.row_id_representation
+    );
+  }
 }
 
 impl PsqlTableRow {
