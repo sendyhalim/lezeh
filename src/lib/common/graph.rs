@@ -8,12 +8,12 @@ use petgraph::visit::EdgeRef;
 use petgraph::Directed;
 use petgraph::Direction;
 
-pub struct NodesByLevel<'a, T> {
+pub struct NodesByLevel<T> {
   pub visited: HashSet<NodeIndex>,
-  pub nodes_by_level: HashMap<i32, HashSet<&'a T>>,
+  pub nodes_by_level: HashMap<i32, HashSet<T>>,
 }
 
-impl<'a, T> std::fmt::Debug for NodesByLevel<'a, T>
+impl<T> std::fmt::Debug for NodesByLevel<T>
 where
   T: std::fmt::Debug,
 {
@@ -41,16 +41,16 @@ where
   }
 }
 
-impl<'a, T> NodesByLevel<'a, T> {
+impl<T> NodesByLevel<T> {
   pub fn fill_nodes_by_level(
     &mut self,
-    graph: &'a Graph<T, i32, Directed>,
+    graph: Graph<T, i32, Directed>,
     node_index: NodeIndex,
     current_level: i32,
   ) where
     T: Hash + Eq,
   {
-    let node = &graph[node_index];
+    let node = graph[node_index];
 
     self
       .nodes_by_level

@@ -158,7 +158,7 @@ impl DbCli {
       nodes_by_level: Default::default(),
     };
 
-    nodes_by_level.fill_nodes_by_level(&graph, root, 0);
+    nodes_by_level.fill_nodes_by_level(graph, root, 0);
 
     let statements: Vec<String> =
       psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level.nodes_by_level)?;
