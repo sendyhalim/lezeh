@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use itertools::Itertools;
 
@@ -75,7 +76,7 @@ pub struct RelationInsert {}
 
 impl RelationInsert {
   pub fn into_insert_statements(
-    mut rows_by_level: HashMap<i32, HashSet<PsqlTableRow>>,
+    mut rows_by_level: HashMap<i32, HashSet<&Rc<PsqlTableRow>>>,
   ) -> ResultAnyError<Vec<String>> {
     let mut levels: Vec<i32> = rows_by_level.keys().cloned().collect();
     let mut insert_statement_map: HashMap<String, bool> = Default::default();
@@ -85,7 +86,7 @@ impl RelationInsert {
     let insert_statements: ResultAnyError<Vec<Vec<String>>> = levels
       .iter()
       .map(|level| {
-        let rows: &mut HashSet<PsqlTableRow> = rows_by_level.get_mut(level).unwrap();
+        let rows: &mut HashSet<_> = rows_by_level.get_mut(level).unwrap();
 
         rows.retain(|row| {
           let row_key = format!("{}.{}", row.table.id, row.row_id_representation);
@@ -106,7 +107,7 @@ impl RelationInsert {
   }
 
   pub fn table_rows_into_insert_statement(
-    rows: &HashSet<PsqlTableRow>,
+    rows: &HashSet<&Rc<PsqlTableRow>>,
   ) -> ResultAnyError<Vec<String>> {
     // Rows of the same table can be scattered through vec of psql table rows,
     // remember Vec<PsqlTableRows> meaning Vec<Vec<Row>> due to PsqlTableRows
@@ -117,19 +118,20 @@ impl RelationInsert {
       .map(|row| (row.table.id.clone(), row.table.clone()))
       .collect();
 
-    let psql_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&PsqlTableRow>> = rows
+    let psql_rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&Rc<PsqlTableRow>>> = rows
       .iter()
-      .map(|psql_table_row| (psql_table_row.table.id.clone(), psql_table_row))
+      .map(|psql_table_row| (psql_table_row.table.id.clone(), psql_table_row.clone()))
       .into_group_map();
 
-    let rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&PsqlTableRow>> = psql_rows_by_table_id
-      .into_iter()
-      .map(
-        |(table_identity, row): (PsqlTableIdentity, Vec<&PsqlTableRow>)| {
-          return (table_identity, row);
-        },
-      )
-      .collect();
+    let rows_by_table_id: HashMap<PsqlTableIdentity, Vec<&Rc<PsqlTableRow>>> =
+      psql_rows_by_table_id
+        .into_iter()
+        .map(
+          |(table_identity, row): (PsqlTableIdentity, Vec<&Rc<PsqlTableRow>>)| {
+            return (table_identity, row);
+          },
+        )
+        .collect();
 
     return rows_by_table_id
       .iter()
@@ -144,7 +146,7 @@ impl RelationInsert {
 
   pub fn table_row_into_insert_statement(
     table: &PsqlTable,
-    rows: &Vec<&PsqlTableRow>,
+    rows: &Vec<&Rc<PsqlTableRow>>,
   ) -> ResultAnyError<String> {
     let first_row: &PsqlTableRow = rows.get(0).unwrap();
     let table_insert_row_columns = TableInsertRowColumns {

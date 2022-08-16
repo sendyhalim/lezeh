@@ -1,5 +1,7 @@
 # Lezeh
 `lezeh` is a CLI tool to ease day-to-day engineering operations such as:
+* Cherry pick database row and its relations
+* Visualize graph representation of a database row relations
 * Merging feature branch (by convention, specific using phabricator task number) into master,
   this includes cleaning up (delete) the merged feature branch
 * Merge and run deployment commands
