@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use anyhow::anyhow;
@@ -8,19 +7,17 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
-use petgraph::dot::{Config as GraphDotConfig, Dot};
 use petgraph::graph::NodeIndex;
 use slog::Logger;
 
 use crate::common::config::Config;
 use crate::common::config::DbConfig;
 use crate::common::graph::NodesByLevel;
-use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 use crate::db::psql;
 use crate::db::psql::connection::*;
 use crate::db::psql::db_metadata::DbMetadata;
-use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity, PsqlTableRow};
+use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity};
 use crate::db::psql::relation_fetcher::RowGraph;
 use crate::db::psql::table_metadata::TableMetadataImpl;
 
@@ -139,7 +136,7 @@ impl DbCli {
 
     // --------------------------------
 
-    let (graph, root) = DbCli::fetch_snowflake_relation_v2(
+    let (graph, root) = DbCli::fetch_relation_graph(
       psql.clone(),
       &psql_table_by_id,
       table,
@@ -158,7 +155,7 @@ impl DbCli {
       nodes_by_level: Default::default(),
     };
 
-    nodes_by_level.fill_nodes_by_level(graph, root, 0);
+    nodes_by_level.fill_nodes_by_level(&graph, root, 0);
 
     let statements: Vec<String> =
       psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level.nodes_by_level)?;
@@ -170,7 +167,7 @@ impl DbCli {
 
 /// Helper function
 impl DbCli {
-  pub fn fetch_snowflake_relation_v2(
+  pub fn fetch_relation_graph(
     psql: Rc<RefCell<PsqlConnection>>,
     psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
     table: &str,
