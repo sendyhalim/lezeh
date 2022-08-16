@@ -10,11 +10,11 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use petgraph::dot::{Config as GraphDotConfig, Dot};
 use petgraph::graph::NodeIndex;
-use petgraph::visit::Bfs;
 use slog::Logger;
 
 use crate::common::config::Config;
 use crate::common::config::DbConfig;
+use crate::common::graph::NodesByLevel;
 use crate::common::rose_tree::RoseTreeNode;
 use crate::common::types::ResultAnyError;
 use crate::db::psql;
@@ -138,21 +138,6 @@ impl DbCli {
     let psql_table_by_id = db_metadata.load_table_structure(schema)?;
 
     // --------------------------------
-    let tree = DbCli::fetch_snowflake_relation(
-      psql.clone(),
-      &psql_table_by_id,
-      table,
-      values.clone(),
-      column,
-      schema,
-    )?;
-
-    let nodes_by_level: HashMap<i32, HashSet<PsqlTableRow>> = RoseTreeNode::nodes_by_level(tree);
-
-    let statements: Vec<String> =
-      psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
-
-    println!("{}", statements.join("\n"));
 
     let (graph, root) = DbCli::fetch_snowflake_relation_v2(
       psql.clone(),
@@ -163,23 +148,21 @@ impl DbCli {
       schema,
     )?;
 
-    println!(
-      "{:?}",
-      Dot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
-    );
+    // println!(
+    // "{:?}",
+    // Dot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
+    // );
 
-    let mut indices = graph.node_indices();
-    while let Some(nx) = indices.next() {
-      println!("hhhhhh {}", graph[nx].table.id);
-    }
+    let mut nodes_by_level = NodesByLevel {
+      visited: Default::default(),
+      nodes_by_level: Default::default(),
+    };
 
-    let mut bfs = Bfs::new(&graph, root);
+    nodes_by_level.fill_nodes_by_level(&graph, root, 0);
 
-    while let Some(node_index) = bfs.next(&graph) {
-      let psql_table_row: Rc<PsqlTableRow> = graph[node_index].clone();
-
-      println!("table {}", psql_table_row.table.id);
-    }
+    let statements: Vec<String> =
+      psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level.nodes_by_level)?;
+    println!("{}", statements.join("\n"));
 
     return Ok(());
   }
@@ -187,31 +170,6 @@ impl DbCli {
 
 /// Helper function
 impl DbCli {
-  pub fn fetch_snowflake_relation(
-    psql: Rc<RefCell<PsqlConnection>>,
-    psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,
-    table: &str,
-    values: Vec<String>,
-    column: &str,
-    schema: &str,
-  ) -> ResultAnyError<RoseTreeNode<PsqlTableRow>> {
-    let table_metadata = Box::new(TableMetadataImpl::new(psql));
-    let mut relation_fetcher = psql::relation_fetcher::RelationFetcher::new(table_metadata);
-
-    let input = psql::relation_fetcher::FetchRowsAsRoseTreeInput {
-      table_id: &PsqlTableIdentity::new(schema, table),
-      column_name: &column,
-      column_value: values.get(0).unwrap(), // As of now only supports 1 value
-    };
-
-    // As of now only support 1 row
-    let tree: RoseTreeNode<PsqlTableRow> = relation_fetcher
-      .fetch_rose_trees_to_be_inserted(input, psql_table_by_id)?
-      .remove(0);
-
-    return Ok(tree);
-  }
-
   pub fn fetch_snowflake_relation_v2(
     psql: Rc<RefCell<PsqlConnection>>,
     psql_table_by_id: &HashMap<PsqlTableIdentity, PsqlTable>,

@@ -111,7 +111,7 @@ impl RelationFetcher {
           .entry(parent_row.clone())
           .or_insert_with(|| row_graph.add_node(parent_row.clone()));
 
-        row_graph.update_edge(*parent_node_index, current_row_node_index, -1);
+        row_graph.update_edge(current_row_node_index, *parent_node_index, -1);
 
         self.fill_referencing_rows(
           row_graph,
@@ -164,7 +164,7 @@ impl RelationFetcher {
           .entry(child_row.clone())
           .or_insert_with(|| row_graph.add_node(child_row.clone()));
 
-        row_graph.update_edge(current_row_node_index, *child_node_index, -1);
+        row_graph.update_edge(*child_node_index, current_row_node_index, -1);
 
         self.fill_referencing_rows(
           row_graph,

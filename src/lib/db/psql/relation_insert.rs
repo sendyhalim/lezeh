@@ -75,7 +75,7 @@ pub struct RelationInsert {}
 
 impl RelationInsert {
   pub fn into_insert_statements(
-    mut rows_by_level: HashMap<i32, HashSet<PsqlTableRow>>,
+    rows_by_level: &HashMap<i32, HashSet<PsqlTableRow>>,
   ) -> ResultAnyError<Vec<String>> {
     let mut levels: Vec<i32> = rows_by_level.keys().cloned().collect();
     let mut insert_statement_map: HashMap<String, bool> = Default::default();

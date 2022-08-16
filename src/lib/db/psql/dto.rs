@@ -158,7 +158,7 @@ impl std::fmt::Display for PsqlTableRow {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     return write!(
       f,
-      "{}.{}.{}",
+      "{}.{} {}",
       self.table.id.schema, self.table.id.name, self.row_id_representation
     );
   }
@@ -173,7 +173,7 @@ impl PsqlTableRow {
 
     return PsqlTableRow {
       table,
-      row_id_representation: row_id,
+      row_id_representation: row_id.trim_matches('\'').to_string(),
       inner_row: row,
     };
   }

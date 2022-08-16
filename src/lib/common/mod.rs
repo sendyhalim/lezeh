@@ -1,6 +1,7 @@
 pub mod asset;
 pub mod command;
 pub mod config;
+pub mod graph;
 pub mod handlebars;
 pub mod io_logger;
 pub mod macros;
