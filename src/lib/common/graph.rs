@@ -8,9 +8,9 @@ use petgraph::visit::EdgeRef;
 use petgraph::Directed;
 use petgraph::Direction;
 
-pub struct NodesByLevel<'a, T> {
-  pub visited: HashSet<NodeIndex>,
-  pub nodes_by_level: HashMap<i32, HashSet<&'a T>>,
+struct NodesByLevel<'a, T> {
+  visited: HashSet<NodeIndex>,
+  nodes_by_level: HashMap<i32, HashSet<&'a T>>,
 }
 
 impl<'a, T> std::fmt::Debug for NodesByLevel<'a, T>
@@ -42,7 +42,16 @@ where
 }
 
 impl<'a, T> NodesByLevel<'a, T> {
-  pub fn fill_nodes_by_level(
+  fn new() -> NodesByLevel<'a, T> {
+    return NodesByLevel {
+      visited: Default::default(),
+      nodes_by_level: Default::default(),
+    };
+  }
+}
+
+impl<'a, T> NodesByLevel<'a, T> {
+  fn fill_nodes_by_level(
     &mut self,
     graph: &'a Graph<T, i32, Directed>,
     node_index: NodeIndex,
@@ -81,3 +90,22 @@ impl<'a, T> NodesByLevel<'a, T> {
     }
   }
 }
+
+/// Ergonomic method to create a hashmap that represents nodes by level
+pub fn create_nodes_by_level<'a, T>(
+  graph: &'a Graph<T, i32, Directed>,
+  node_index: NodeIndex,
+  current_level: i32,
+) -> HashMap<i32, HashSet<&'a T>>
+where
+  T: Hash + Eq,
+{
+  let mut nodes_by_level = NodesByLevel::new();
+
+  nodes_by_level.fill_nodes_by_level(graph, node_index, current_level);
+
+  return nodes_by_level.nodes_by_level;
+}
+
+#[cfg(test)]
+mod test {}

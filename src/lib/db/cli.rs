@@ -12,7 +12,7 @@ use slog::Logger;
 
 use crate::common::config::Config;
 use crate::common::config::DbConfig;
-use crate::common::graph::NodesByLevel;
+use crate::common::graph as graph_util;
 use crate::common::types::ResultAnyError;
 use crate::db::psql;
 use crate::db::psql::connection::*;
@@ -136,7 +136,7 @@ impl DbCli {
 
     // --------------------------------
 
-    let (graph, root) = DbCli::fetch_relation_graph(
+    let (graph, current_node_index) = DbCli::fetch_relation_graph(
       psql.clone(),
       &psql_table_by_id,
       table,
@@ -150,15 +150,10 @@ impl DbCli {
     // Dot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
     // );
 
-    let mut nodes_by_level = NodesByLevel {
-      visited: Default::default(),
-      nodes_by_level: Default::default(),
-    };
-
-    nodes_by_level.fill_nodes_by_level(&graph, root, 0);
+    let nodes_by_level = graph_util::create_nodes_by_level(&graph, current_node_index, 0);
 
     let statements: Vec<String> =
-      psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level.nodes_by_level)?;
+      psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
     println!("{}", statements.join("\n"));
 
     return Ok(());
