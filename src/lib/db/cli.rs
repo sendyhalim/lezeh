@@ -7,6 +7,7 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
+use petgraph::dot::{Config as GraphDotConfig, Dot as GraphDot};
 use petgraph::graph::NodeIndex;
 use slog::Logger;
 
@@ -22,6 +23,30 @@ use crate::db::psql::relation_fetcher::RowGraph;
 use crate::db::psql::table_metadata::TableMetadataImpl;
 
 pub struct DbCli {}
+
+enum CherryPickOutputFormatEnum {
+  InsertStatement,
+  GraphViz,
+}
+
+impl From<&str> for CherryPickOutputFormatEnum {
+  fn from(s: &str) -> Self {
+    match s.to_uppercase().as_ref() {
+      "INSERTSTATEMENT" => CherryPickOutputFormatEnum::InsertStatement,
+      "GRAPHVIZ" => CherryPickOutputFormatEnum::GraphViz,
+      _ => CherryPickOutputFormatEnum::InsertStatement,
+    }
+  }
+}
+
+impl std::fmt::Display for CherryPickOutputFormatEnum {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      CherryPickOutputFormatEnum::InsertStatement => write!(f, "InsertStatement"),
+      CherryPickOutputFormatEnum::GraphViz => write!(f, "GraphViz"),
+    }
+  }
+}
 
 /// CLI definition
 impl DbCli {
@@ -41,6 +66,7 @@ impl DbCli {
               .long("--schema")
               .required(false)
               .takes_value(true)
+              .default_value("public")
               .help("Db schema"),
           )
           .arg(
@@ -55,6 +81,7 @@ impl DbCli {
               .long("--column")
               .required(false)
               .takes_value(true)
+              .default_value("id")
               .help("The column that the values are tied to, default to id"),
           )
           .arg(
@@ -70,6 +97,15 @@ impl DbCli {
               .required(true)
               .takes_value(true)
               .help("Source db to fetch data from"),
+          )
+          .arg(
+            Arg::with_name("output_format")
+              .long("--output-format")
+              .required(false)
+              .takes_value(true)
+              .default_value("InsertStatement")
+              .possible_values(&["InsertStatement", "GraphViz"])
+              .help("Print format of the cherry pick cli output"),
           ),
       );
   }
@@ -89,11 +125,9 @@ impl DbCli {
           cherry_pick_cli.value_of("source_db").unwrap(),
           cherry_pick_cli.value_of("table").unwrap(),
           values,
-          cherry_pick_cli.value_of("column").or(Some("id")).unwrap(),
-          cherry_pick_cli
-            .value_of("schema")
-            .or(Some("public"))
-            .unwrap(),
+          cherry_pick_cli.value_of("column").unwrap(),
+          cherry_pick_cli.value_of("schema").unwrap(),
+          cherry_pick_cli.value_of("output_format").unwrap().into(),
           config,
           logger,
         );
@@ -111,6 +145,7 @@ impl DbCli {
     values: Vec<String>,
     column: &str,
     schema: &str,
+    output_format: CherryPickOutputFormatEnum,
     config: Config,
     _logger: Logger,
   ) -> ResultAnyError<()> {
@@ -145,16 +180,21 @@ impl DbCli {
       schema,
     )?;
 
-    // println!(
-    // "{:?}",
-    // Dot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
-    // );
+    match output_format {
+      CherryPickOutputFormatEnum::InsertStatement => {
+        let nodes_by_level = graph_util::create_nodes_by_level(&graph, current_node_index, 0);
 
-    let nodes_by_level = graph_util::create_nodes_by_level(&graph, current_node_index, 0);
-
-    let statements: Vec<String> =
-      psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
-    println!("{}", statements.join("\n"));
+        let statements: Vec<String> =
+          psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
+        println!("{}", statements.join("\n"));
+      }
+      CherryPickOutputFormatEnum::GraphViz => {
+        println!(
+          "{:?}",
+          GraphDot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
+        );
+      }
+    }
 
     return Ok(());
   }
