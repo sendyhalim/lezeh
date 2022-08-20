@@ -59,6 +59,11 @@ impl<'a, T> NodesByLevel<'a, T> {
   ) where
     T: Hash + Eq,
   {
+    // Check if node index exists here;
+    if graph.node_weight(node_index).is_none() {
+      return;
+    }
+
     let node = &graph[node_index];
 
     self
@@ -108,4 +113,137 @@ where
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+  use super::*;
+  mod nodes_by_level {
+    use super::*;
+    use crate::common::macros::hashmap_literal;
+
+    #[test]
+    fn test_empty_graph() {
+      let graph: Graph<i32, i32> = Graph::new();
+
+      let nodes_by_level = create_nodes_by_level(&graph, NodeIndex::new(0), 0);
+
+      assert_eq!(nodes_by_level.is_empty(), true);
+    }
+
+    #[test]
+    fn test_1_level_graph() {
+      let mut graph: Graph<(i32, &str), i32> = Graph::new();
+
+      // Just for contention and ease of read we're
+      // going to use this convention -> ({level}, {label}).
+      let current_index = graph.add_node((0, "a"));
+
+      let mut nodes_by_level = create_nodes_by_level(&graph, current_index, 0);
+
+      assert_eq!(nodes_by_level.len(), 1);
+      assert_eq!(
+        nodes_by_level
+          .remove(&0)
+          .unwrap()
+          .into_iter()
+          .collect::<Vec<_>>(),
+        vec![&(0 as i32, "a")]
+      );
+    }
+
+    #[test]
+    fn test_only_has_parents() {
+      let mut graph: Graph<(i32, &str), i32> = Graph::new();
+
+      // Just for contention and ease of read we're
+      // going to use this convention -> ({level}, {label}).
+      let current_index = graph.add_node((0, "a"));
+      let pa1 = graph.add_node((-1, "pa1"));
+      let pa2 = graph.add_node((-1, "pa2"));
+      let paa1 = graph.add_node((-2, "paa1"));
+
+      graph.extend_with_edges(&vec![
+        (current_index, pa1),
+        (current_index, pa2),
+        (pa1, paa1),
+      ]);
+
+      let nodes_by_level = create_nodes_by_level(&graph, current_index, 0);
+
+      let expected_levels: HashMap<i32, HashSet<&(i32, &str)>> = hashmap_literal! {
+        -2 => HashSet::from([&(-2, "paa1")]),
+        -1 => HashSet::from([&(-1, "pa1"), &(-1, "pa2")]),
+        0 => HashSet::from([&(0, "a")]),
+      };
+
+      assert_eq!(nodes_by_level.len(), 3);
+      assert_eq!(nodes_by_level, expected_levels);
+    }
+
+    #[test]
+    fn test_only_has_children() {
+      let mut graph: Graph<(i32, &str), i32> = Graph::new();
+
+      // Just for convention and ease of read we're
+      // going to use this convention -> ({level}, {label}).
+      let current_index = graph.add_node((0, "a"));
+      let ca1 = graph.add_node((1, "ca1"));
+      let ca2 = graph.add_node((1, "ca2"));
+      let caa1 = graph.add_node((2, "caa1"));
+
+      graph.extend_with_edges(&vec![
+        (ca1, current_index),
+        (ca2, current_index),
+        (caa1, ca1),
+      ]);
+
+      let nodes_by_level = create_nodes_by_level(&graph, current_index, 0);
+
+      let expected_levels: HashMap<i32, HashSet<&(i32, &str)>> = hashmap_literal! {
+        2 => HashSet::from([&(2, "caa1")]),
+        1 => HashSet::from([&(1, "ca1"), &(1, "ca2")]),
+        0 => HashSet::from([&(0, "a")]),
+      };
+
+      assert_eq!(nodes_by_level.len(), 3);
+      assert_eq!(nodes_by_level, expected_levels);
+    }
+
+    #[test]
+    fn test_multi_level_graph() {
+      let mut graph: Graph<(i32, &str), i32> = Graph::new();
+
+      // Just for convention and ease of read we're
+      // going to use this convention -> ({level}, {label}).
+      let current_index = graph.add_node((0, "a"));
+      let paa1 = graph.add_node((-2, "paa1"));
+      let pa1 = graph.add_node((-1, "pa1"));
+      let pa2 = graph.add_node((-1, "pa2"));
+      let ca1 = graph.add_node((1, "ca1"));
+      let ca2 = graph.add_node((1, "ca2"));
+      let caa1 = graph.add_node((2, "caa1"));
+
+      graph.extend_with_edges(&vec![
+        // Parents
+        (current_index, pa1),
+        (current_index, pa2),
+        (pa1, paa1),
+        // Children
+        (ca1, current_index),
+        (ca2, current_index),
+        (caa1, ca1),
+      ]);
+
+      let nodes_by_level = create_nodes_by_level(&graph, current_index, 0);
+
+      let expected_levels: HashMap<i32, HashSet<&(i32, &str)>> = hashmap_literal! {
+        -2 => HashSet::from([&(-2, "paa1")]),
+        -1 => HashSet::from([&(-1, "pa1"), &(-1, "pa2")]),
+        0 => HashSet::from([&(0, "a")]),
+        1 => HashSet::from([&(1, "ca1"), &(1, "ca2")]),
+        2 => HashSet::from([&(2, "caa1")]),
+      };
+
+      assert_eq!(nodes_by_level.len(), 5);
+      assert_eq!(nodes_by_level, expected_levels);
+    }
+  }
+}
