@@ -98,6 +98,7 @@ lezeh db cherry-pick \
   --table=orders \ # Table that the value will be fetched from
   --column=id \ # Optional arg, which column that contains the given values, defaults to id
   --schema=public # Db schema, defaults to public
+  --output-format=InsertStatement|GraphViz # Optional, defaults to InsertStatement
 ```
 
 
