@@ -26,14 +26,14 @@ pub struct DbCli {}
 
 enum CherryPickOutputFormatEnum {
   InsertStatement,
-  GraphViz,
+  Graphviz,
 }
 
 impl From<&str> for CherryPickOutputFormatEnum {
   fn from(s: &str) -> Self {
     match s.to_uppercase().as_ref() {
       "INSERTSTATEMENT" => CherryPickOutputFormatEnum::InsertStatement,
-      "GRAPHVIZ" => CherryPickOutputFormatEnum::GraphViz,
+      "GRAPHVIZ" => CherryPickOutputFormatEnum::Graphviz,
       _ => CherryPickOutputFormatEnum::InsertStatement,
     }
   }
@@ -43,7 +43,7 @@ impl std::fmt::Display for CherryPickOutputFormatEnum {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       CherryPickOutputFormatEnum::InsertStatement => write!(f, "InsertStatement"),
-      CherryPickOutputFormatEnum::GraphViz => write!(f, "GraphViz"),
+      CherryPickOutputFormatEnum::Graphviz => write!(f, "Graphviz"),
     }
   }
 }
@@ -104,7 +104,7 @@ impl DbCli {
               .required(false)
               .takes_value(true)
               .default_value("InsertStatement")
-              .possible_values(&["InsertStatement", "GraphViz"])
+              .possible_values(&["InsertStatement", "Graphviz"])
               .help("Print format of the cherry pick cli output"),
           ),
       );
@@ -188,7 +188,7 @@ impl DbCli {
           psql::relation_insert::RelationInsert::into_insert_statements(nodes_by_level)?;
         println!("{}", statements.join("\n"));
       }
-      CherryPickOutputFormatEnum::GraphViz => {
+      CherryPickOutputFormatEnum::Graphviz => {
         println!(
           "{:?}",
           GraphDot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
