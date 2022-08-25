@@ -11,9 +11,13 @@ pub struct HandlebarsRenderer {
 
 impl HandlebarsRenderer {
   pub fn new() -> HandlebarsRenderer {
-    return HandlebarsRenderer {
-      handlebars_client: handlebars::Handlebars::new(),
-    };
+    let mut handlebars_client = handlebars::Handlebars::new();
+
+    // By default handlebars will escape html. For our cases we don't want to
+    // escape html, most of the use case will be on CLI so it should be safe.
+    handlebars_client.register_escape_fn(handlebars::no_escape);
+
+    return HandlebarsRenderer { handlebars_client };
   }
 }
 
