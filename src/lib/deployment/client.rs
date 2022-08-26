@@ -82,12 +82,12 @@ impl GlobalDeploymentClient {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ClientOperationError {
-  #[error("Merge failed, please see {pull_request_url:?}")]
+  #[error("Merge failed, please see {pull_request_url}")]
   MergeError {
     remote_branch: String,
     pull_request_url: String,
   },
-  #[error("Remote branch is behind master(no changes to master), remote branch {remote_branch:?}")]
+  #[error("Remote branch is behind master(no changes to master), remote branch {remote_branch}")]
   RemoteBranchIsBehindMasterError {
     remote_branch: String,
     debug_url: String,

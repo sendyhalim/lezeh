@@ -2,7 +2,6 @@
 +-------------------------------------------------
 | 📑 Task T{{@key}}
 +-------------------------------------------------
-|
   {{#with (lookup @root.merge_result_summary_by_task_id @key) as |merge_result_summary|}}
     {{#each merge_result_summary.success_merge_results}}
 | [👌 merged into master] {{ this.repo_config.github_path }} {{ this.pull_request_url }}
@@ -17,7 +16,6 @@
 | --
     {{/each}}
   {{/with}}
-|
 •
 {{/each}}
 •
