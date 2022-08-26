@@ -93,12 +93,28 @@ recursively. This is where cherry-pick can be useful.
 
 ```bash
 lezeh db cherry-pick \
-  --source-db=testdb \ # Fetch from test_db, this one is based on the config
-  --values=123 \ # As of now only supports 1 value, but it will change in the future
-  --table=orders \ # Table that the value will be fetched from
-  --column=id \ # Optional arg, which column that contains the given values, defaults to id
-  --schema=public # Db schema, defaults to public
-  --output-format=InsertStatement|GraphViz # Optional, defaults to InsertStatement
+  # Fetch from test_db, this one is based on the config
+  --source-db=testdb \
+
+  # As of now only supports 1 value, but it will change in the future
+  --values=123 \
+
+  # Table that the value will be fetched from
+  --table=orders \
+
+  # [Optional] which column that contains the given values, defaults to id
+  --column=id \
+
+  # [Optional] Db schema, defaults to public
+  --schema=public \
+
+  # [Optional], defaults to insert-statement. If supplied Graphviz then it'll serialize
+  # the graph representation that can be represented in a graphviz format
+  # see https://graphviz.org/ for more details.
+  # The output can be used on online graphviz visualizer:
+  # * https://edotor.net
+  # * https://dreampuf.github.io/GraphvizOnline
+  --output-format=insert-statement|graphviz
 ```
 
 
