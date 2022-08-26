@@ -1,6 +1,6 @@
 [package]
 name = "lezeh"
-version = "0.7.7"
+version = "0.7.6"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
