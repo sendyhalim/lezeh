@@ -32,7 +32,7 @@ enum CherryPickOutputFormatEnum {
 impl From<&str> for CherryPickOutputFormatEnum {
   fn from(s: &str) -> Self {
     match s.to_uppercase().as_ref() {
-      "INSERTSTATEMENT" => CherryPickOutputFormatEnum::InsertStatement,
+      "INSERT-STATEMENT" => CherryPickOutputFormatEnum::InsertStatement,
       "GRAPHVIZ" => CherryPickOutputFormatEnum::Graphviz,
       _ => CherryPickOutputFormatEnum::InsertStatement,
     }
@@ -42,8 +42,8 @@ impl From<&str> for CherryPickOutputFormatEnum {
 impl std::fmt::Display for CherryPickOutputFormatEnum {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      CherryPickOutputFormatEnum::InsertStatement => write!(f, "InsertStatement"),
-      CherryPickOutputFormatEnum::Graphviz => write!(f, "Graphviz"),
+      CherryPickOutputFormatEnum::InsertStatement => write!(f, "insert-statement"),
+      CherryPickOutputFormatEnum::Graphviz => write!(f, "graphviz"),
     }
   }
 }
@@ -103,8 +103,8 @@ impl DbCli {
               .long("--output-format")
               .required(false)
               .takes_value(true)
-              .default_value("InsertStatement")
-              .possible_values(&["InsertStatement", "Graphviz"])
+              .default_value("insert-statement")
+              .possible_values(&["insert-statement", "graphviz"])
               .help("Print format of the cherry pick cli output"),
           ),
       );

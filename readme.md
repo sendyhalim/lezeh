@@ -108,13 +108,13 @@ lezeh db cherry-pick \
   # [Optional] Db schema, defaults to public
   --schema=public \
 
-  # [Optional], defaults to InsertStatement. If supplied Graphviz then it'll serialize
+  # [Optional], defaults to insert-statement. If supplied Graphviz then it'll serialize
   # the graph representation that can be represented in a graphviz format
   # see https://graphviz.org/ for more details.
   # The output can be used on online graphviz visualizer:
   # * https://edotor.net
   # * https://dreampuf.github.io/GraphvizOnline
-  --output-format=InsertStatement|Graphviz
+  --output-format=insert-statement|graphviz
 ```
 
 
