@@ -8,17 +8,20 @@ use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 use petgraph::dot::{Config as GraphDotConfig, Dot as GraphDot};
+use petgraph::graph::Graph as BaseGraph;
 use petgraph::graph::NodeIndex;
+use petgraph::Directed as DirectedGraph;
 use slog::Logger;
 
 use crate::common::config::Config;
 use crate::common::config::DbConfig;
 use crate::common::graph as graph_util;
+use crate::common::macros::hashmap_literal;
 use crate::common::types::ResultAnyError;
 use crate::db::psql;
 use crate::db::psql::connection::*;
 use crate::db::psql::db_metadata::DbMetadata;
-use crate::db::psql::dto::{PsqlTable, PsqlTableIdentity};
+use crate::db::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
 use crate::db::psql::relation_fetcher::RowGraph;
 use crate::db::psql::table_metadata::TableMetadataImpl;
 
@@ -106,6 +109,14 @@ impl DbCli {
               .default_value("insert-statement")
               .possible_values(&["insert-statement", "graphviz"])
               .help("Print format of the cherry pick cli output"),
+          )
+          .arg(
+            Arg::with_name("graph_table_columns")
+              .long("--graph-table-columns")
+              .required(false)
+              .takes_value(true)
+              .use_delimiter(true)
+              .help("Set the table columns that will be displayed on each node in format '{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}' for example 'users:id|name|email, orders:|code'"),
           ),
       );
   }
@@ -118,8 +129,18 @@ impl DbCli {
           .or_else(|| Default::default())
           .unwrap()
           .into_iter()
-          .map(|s| s.to_owned())
+          .map(ToOwned::to_owned)
           .collect();
+
+        let graph_table_columns: Vec<String> = cherry_pick_cli
+          .values_of("graph_table_columns")
+          .or_else(|| Some(Default::default()))
+          .unwrap()
+          .into_iter()
+          .map(str::trim)
+          .map(ToOwned::to_owned)
+          .collect();
+        println!("HEHEH {:?}", graph_table_columns);
 
         return DbCli::cherry_pick(
           cherry_pick_cli.value_of("source_db").unwrap(),
@@ -189,6 +210,18 @@ impl DbCli {
         println!("{}", statements.join("\n"));
       }
       CherryPickOutputFormatEnum::Graphviz => {
+        let graph = graph.map(
+          |node_index, _node_weight| {
+            PsqlTableRowDynamicVisual::new(
+              &graph[node_index],
+              hashmap_literal! {
+                PsqlTableIdentity::new("public", "customers") => vec!["name".to_owned()],
+              },
+            )
+          },
+          |edge, _edge_index| edge,
+        );
+
         println!(
           "{:?}",
           GraphDot::with_config(&graph, &[GraphDotConfig::EdgeNoLabel])
@@ -197,6 +230,71 @@ impl DbCli {
     }
 
     return Ok(());
+  }
+}
+
+struct PsqlTableRowDynamicVisual<'a> {
+  displayed_fields_by_table_id: HashMap<PsqlTableIdentity, Vec<String>>,
+  inner: &'a PsqlTableRow,
+}
+
+impl<'a> PsqlTableRowDynamicVisual<'a> {
+  fn new(
+    inner: &'a PsqlTableRow,
+    displayed_fields_by_table_id: HashMap<PsqlTableIdentity, Vec<String>>,
+  ) -> PsqlTableRowDynamicVisual {
+    return PsqlTableRowDynamicVisual {
+      displayed_fields_by_table_id,
+      inner,
+    };
+  }
+}
+
+impl<'a> std::fmt::Debug for PsqlTableRowDynamicVisual<'a> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return write!(f, "{}", self as &dyn std::fmt::Display);
+  }
+}
+
+impl<'a> std::fmt::Display for PsqlTableRowDynamicVisual<'a> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let value_by_column: HashMap<&str, FromSqlSink> = self.inner.get_column_value_map();
+    let mut label: String = self.inner.row_id_representation.clone();
+
+    if let Some(fields) = self.displayed_fields_by_table_id.get(&self.inner.table.id) {
+      let labels: ResultAnyError<Vec<String>> = fields
+        .iter()
+        .filter_map(|column_name| {
+          return value_by_column.get(&column_name[..]);
+        })
+        .map(|val| val.to_string_for_statement())
+        .collect();
+
+      if labels.is_ok() {
+        label = labels
+          .unwrap()
+          .into_iter()
+          .map(|str_val| str_val.trim_matches('\'').to_string())
+          .collect::<Vec<String>>()
+          .join("\n");
+      } else {
+        let err = labels.err().unwrap();
+
+        // BAD, but better than letting error goes into limbo since I haven't
+        // found way to propagate error properly from anyhow::Error into std::fmt::Error;
+        write!(f, "Error when serializing row into string {:?}", err)?;
+
+        // Tell the caller that we have error, the error message is not transmitted though
+        // but rather written out directly.
+        return Err(std::fmt::Error {});
+      }
+    }
+
+    return write!(
+      f,
+      "{}.{} {}",
+      self.inner.table.id.schema, self.inner.table.id.name, label
+    );
   }
 }
 
