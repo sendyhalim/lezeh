@@ -12,6 +12,7 @@ use petgraph::graph::Graph as BaseGraph;
 use petgraph::graph::NodeIndex;
 use petgraph::Directed as DirectedGraph;
 use slog::Logger;
+use std::convert::TryInto;
 
 use crate::common::config::Config;
 use crate::common::config::DbConfig;
@@ -140,36 +141,105 @@ impl DbCli {
           .map(str::trim)
           .map(ToOwned::to_owned)
           .collect();
-        println!("HEHEH {:?}", graph_table_columns);
 
-        return DbCli::cherry_pick(
+        return DbCli::cherry_pick(CherryPickInput::new(
           cherry_pick_cli.value_of("source_db").unwrap(),
-          cherry_pick_cli.value_of("table").unwrap(),
-          values,
-          cherry_pick_cli.value_of("column").unwrap(),
           cherry_pick_cli.value_of("schema").unwrap(),
+          cherry_pick_cli.value_of("table").unwrap(),
+          cherry_pick_cli.value_of("column").unwrap(),
+          values,
           cherry_pick_cli.value_of("output_format").unwrap().into(),
+          graph_table_columns,
           config,
           logger,
-        );
+        )?);
       }
       _ => Ok(()),
     }
   }
 }
 
+struct CherryPickInput<'a> {
+  source_db: &'a str,
+  schema: &'a str,
+  table: &'a str,
+  column: &'a str,
+  values: Vec<String>,
+  output_format: CherryPickOutputFormatEnum,
+  displayed_fields_by_table_id: HashMap<PsqlTableIdentity, Vec<String>>,
+  config: Config,
+  logger: Logger,
+}
+
+impl<'a> CherryPickInput<'a> {
+  pub fn new(
+    source_db: &'a str,
+    schema: &'a str,
+    table: &'a str,
+    column: &'a str,
+    values: Vec<String>,
+    output_format: CherryPickOutputFormatEnum,
+    graph_table_columns: Vec<String>,
+    config: Config,
+    logger: Logger,
+  ) -> ResultAnyError<CherryPickInput<'a>> {
+    return Ok(CherryPickInput {
+      source_db,
+      schema,
+      table,
+      values,
+      column,
+      output_format,
+      displayed_fields_by_table_id:
+        CherryPickInput::create_displayed_fields_by_table_id_from_param(graph_table_columns)?,
+      config,
+      logger,
+    });
+  }
+
+  fn create_displayed_fields_by_table_id_from_param(
+    graph_table_columns: Vec<String>,
+  ) -> ResultAnyError<HashMap<PsqlTableIdentity, Vec<String>>> {
+    return graph_table_columns
+      .into_iter()
+      .map(|displayed_table_column_str| {
+        // TODO: Check format
+        let (table_id_str, pipe_separated_column) =
+          displayed_table_column_str.split_once(':').unwrap();
+
+        return table_id_str.try_into().map(|table_id| {
+          (
+            table_id,
+            pipe_separated_column
+              .split('|')
+              .into_iter()
+              .map(str::trim)
+              .map(ToOwned::to_owned)
+              .collect(),
+          )
+        });
+      })
+      .collect();
+  }
+}
+
 /// 1 method represents 1 CLI command
 impl DbCli {
-  fn cherry_pick<'a>(
-    source_db: &str,
-    table: &str,
-    values: Vec<String>,
-    column: &str,
-    schema: &str,
-    output_format: CherryPickOutputFormatEnum,
-    config: Config,
-    _logger: Logger,
-  ) -> ResultAnyError<()> {
+  fn cherry_pick<'a>(input: CherryPickInput) -> ResultAnyError<()> {
+    let CherryPickInput {
+      source_db,
+      schema,
+      table,
+      values,
+      column,
+      output_format,
+      displayed_fields_by_table_id,
+      config,
+      logger,
+    } = input;
+
+    println!("HA! {:?}", displayed_fields_by_table_id);
+
     let db_by_name: HashMap<String, DbConfig> = config
       .db_by_name
       .ok_or_else(|| anyhow!("Db config is not set"))?;
@@ -212,12 +282,7 @@ impl DbCli {
       CherryPickOutputFormatEnum::Graphviz => {
         let graph = graph.map(
           |node_index, _node_weight| {
-            PsqlTableRowDynamicVisual::new(
-              &graph[node_index],
-              hashmap_literal! {
-                PsqlTableIdentity::new("public", "customers") => vec!["name".to_owned()],
-              },
-            )
+            PsqlTableRowDynamicVisual::new(&graph[node_index], &displayed_fields_by_table_id)
           },
           |edge, _edge_index| edge,
         );
@@ -234,15 +299,15 @@ impl DbCli {
 }
 
 struct PsqlTableRowDynamicVisual<'a> {
-  displayed_fields_by_table_id: HashMap<PsqlTableIdentity, Vec<String>>,
+  displayed_fields_by_table_id: &'a HashMap<PsqlTableIdentity, Vec<String>>,
   inner: &'a PsqlTableRow,
 }
 
 impl<'a> PsqlTableRowDynamicVisual<'a> {
   fn new(
     inner: &'a PsqlTableRow,
-    displayed_fields_by_table_id: HashMap<PsqlTableIdentity, Vec<String>>,
-  ) -> PsqlTableRowDynamicVisual {
+    displayed_fields_by_table_id: &'a HashMap<PsqlTableIdentity, Vec<String>>,
+  ) -> PsqlTableRowDynamicVisual<'a> {
     return PsqlTableRowDynamicVisual {
       displayed_fields_by_table_id,
       inner,

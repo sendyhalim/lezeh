@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use anyhow::anyhow;
 use chrono::{NaiveDate, NaiveDateTime};
 use postgres::types::to_sql_checked;
 use postgres::types::FromSql;
@@ -65,6 +66,31 @@ impl PsqlForeignKey {
 pub struct PsqlTableIdentity {
   pub schema: String,
   pub name: String,
+}
+
+impl std::convert::TryFrom<&str> for PsqlTableIdentity {
+  type Error = anyhow::Error;
+
+  /// Try to create PsqlTableIdentity from string with format `{schema}.{tableName}`
+  /// for example public.users
+  fn try_from(value: &str) -> Result<Self, Self::Error> {
+    let mut splitted: Vec<&str> = value.split('.').collect();
+
+    if splitted.len() == 1 {
+      splitted.insert(0, "public");
+    }
+
+    if splitted.len() != 2 {
+      return Err(anyhow!(
+        "Invalid psql table identity string format, expected in format {{schema}}.{{tableName}}",
+      ));
+    }
+
+    return Ok(PsqlTableIdentity::new(
+      splitted.remove(0),
+      splitted.remove(0),
+    ));
+  }
 }
 
 impl PsqlTableIdentity {
