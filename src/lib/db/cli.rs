@@ -17,7 +17,6 @@ use std::convert::TryInto;
 use crate::common::config::Config;
 use crate::common::config::DbConfig;
 use crate::common::graph as graph_util;
-use crate::common::macros::hashmap_literal;
 use crate::common::types::ResultAnyError;
 use crate::db::psql;
 use crate::db::psql::connection::*;
@@ -203,11 +202,15 @@ impl<'a> CherryPickInput<'a> {
     return graph_table_columns
       .into_iter()
       .map(|displayed_table_column_str| {
-        // TODO: Check format
         let (table_id_str, pipe_separated_column) =
-          displayed_table_column_str.split_once(':').unwrap();
+          displayed_table_column_str.split_once(':').ok_or_else(|| {
+            return anyhow!(
+              "Display table columsn should be in format {{tableIdentity}}:{{column_1}}|{{column_n}}, got {} instead",
+              displayed_table_column_str
+            );
+          })?;
 
-        return table_id_str.try_into().map(|table_id| {
+        return Ok(table_id_str.try_into().map(|table_id| {
           (
             table_id,
             pipe_separated_column
@@ -217,8 +220,10 @@ impl<'a> CherryPickInput<'a> {
               .map(ToOwned::to_owned)
               .collect(),
           )
-        });
+        }));
       })
+      .collect::<ResultAnyError<Vec<_>>>()?
+      .into_iter()
       .collect();
   }
 }
@@ -237,8 +242,6 @@ impl DbCli {
       config,
       logger,
     } = input;
-
-    println!("HA! {:?}", displayed_fields_by_table_id);
 
     let db_by_name: HashMap<String, DbConfig> = config
       .db_by_name
@@ -261,7 +264,6 @@ impl DbCli {
     let psql_table_by_id = db_metadata.load_table_structure(schema)?;
 
     // --------------------------------
-
     let (graph, current_node_index) = DbCli::fetch_relation_graph(
       psql.clone(),
       &psql_table_by_id,
@@ -324,22 +326,34 @@ impl<'a> std::fmt::Debug for PsqlTableRowDynamicVisual<'a> {
 impl<'a> std::fmt::Display for PsqlTableRowDynamicVisual<'a> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let value_by_column: HashMap<&str, FromSqlSink> = self.inner.get_column_value_map();
-    let mut label: String = self.inner.row_id_representation.clone();
+    let mut label: String = format!("`id` {}", self.inner.row_id_representation);
 
     if let Some(fields) = self.displayed_fields_by_table_id.get(&self.inner.table.id) {
-      let labels: ResultAnyError<Vec<String>> = fields
+      let labels: ResultAnyError<Vec<(String, String)>> = fields
         .iter()
         .filter_map(|column_name| {
-          return value_by_column.get(&column_name[..]);
+          return value_by_column
+            .get(&column_name[..])
+            .map(|val| (column_name.clone(), val));
         })
-        .map(|val| val.to_string_for_statement())
+        .map(|(column_name, val)| {
+          val
+            .to_string_for_statement()
+            .map(|str_val| (column_name, str_val))
+        })
         .collect();
 
       if labels.is_ok() {
         label = labels
           .unwrap()
           .into_iter()
-          .map(|str_val| str_val.trim_matches('\'').to_string())
+          .map(|(column_name, str_val)| {
+            format!(
+              "`{}` {}",
+              column_name,
+              str_val.trim_matches('\'').to_string()
+            )
+          })
           .collect::<Vec<String>>()
           .join("\n");
       } else {
@@ -355,11 +369,7 @@ impl<'a> std::fmt::Display for PsqlTableRowDynamicVisual<'a> {
       }
     }
 
-    return write!(
-      f,
-      "{}.{} {}",
-      self.inner.table.id.schema, self.inner.table.id.name, label
-    );
+    return write!(f, "{}\n{}", self.inner.table.id, label);
   }
 }
 
