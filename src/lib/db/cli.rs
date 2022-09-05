@@ -8,9 +8,7 @@ use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 use petgraph::dot::{Config as GraphDotConfig, Dot as GraphDot};
-use petgraph::graph::Graph as BaseGraph;
 use petgraph::graph::NodeIndex;
-use petgraph::Directed as DirectedGraph;
 use slog::Logger;
 use std::convert::TryInto;
 
@@ -360,7 +358,7 @@ impl<'a> std::fmt::Display for PsqlTableRowDynamicVisual<'a> {
         let err = labels.err().unwrap();
 
         // BAD, but better than letting error goes into limbo since I haven't
-        // found way to propagate error properly from anyhow::Error into std::fmt::Error;
+        // found a way to propagate error properly from anyhow::Error into std::fmt::Error;
         write!(f, "Error when serializing row into string {:?}", err)?;
 
         // Tell the caller that we have error, the error message is not transmitted though

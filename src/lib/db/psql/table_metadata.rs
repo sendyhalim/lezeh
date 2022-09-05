@@ -196,13 +196,13 @@ impl TableMetadata for TableMetadataImpl {
         column_name,
         column_value: id,
       })
-      .map(|rows| {
+      .and_then(|rows| {
         return rows
           .into_iter()
           .map(|inner_row| {
             return PsqlTableRow::new(table.clone(), Rc::new(inner_row));
           })
-          .collect();
+          .collect::<ResultAnyError<Vec<PsqlTableRow>>>();
       });
   }
 
@@ -229,8 +229,6 @@ impl TableMetadata for TableMetadataImpl {
           identifier: format!("{:#?}", id),
         })
       })
-      .map(|inner_row| {
-        return PsqlTableRow::new(table.clone(), Rc::new(inner_row));
-      });
+      .and_then(|inner_row| PsqlTableRow::new(table.clone(), Rc::new(inner_row)));
   }
 }

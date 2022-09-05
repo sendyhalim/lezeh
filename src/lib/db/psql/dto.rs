@@ -191,17 +191,16 @@ impl std::fmt::Display for PsqlTableRow {
 }
 
 impl PsqlTableRow {
-  pub fn new(table: PsqlTable, row: Rc<Row>) -> PsqlTableRow {
-    let sink = row.get::<'_, _, FromSqlSink>("id");
+  pub fn new(table: PsqlTable, row: Rc<Row>) -> ResultAnyError<PsqlTableRow> {
+    let row_id_sql_sink = row.get::<'_, _, FromSqlSink>("id");
 
-    // TODO: NOT GOOD, find better ways
-    let row_id = sink.to_string_for_statement().unwrap();
-
-    return PsqlTableRow {
-      table,
-      row_id_representation: row_id.trim_matches('\'').to_string(),
-      inner_row: row,
-    };
+    return row_id_sql_sink.to_string_for_statement().map(|row_id| {
+      return PsqlTableRow {
+        table,
+        row_id_representation: row_id.trim_matches('\'').to_string(),
+        inner_row: row,
+      };
+    });
   }
 }
 
