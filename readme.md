@@ -114,7 +114,15 @@ lezeh db cherry-pick \
   # The output can be used on online graphviz visualizer:
   # * https://edotor.net
   # * https://dreampuf.github.io/GraphvizOnline
-  --output-format=insert-statement|graphviz
+  --output-format=insert-statement|graphviz \
+
+  # [Optional]
+  # The option will be used if you choose pass `--output-format=graphviz`.
+  # Set the table columns that will be displayed on each node in format
+  # '{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}'
+  # for example 'users:id|name|email, orders:|code'
+  # If not set it'll default to only show the row id
+  --graph-table-columns='{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}, {table_n}:{column_n}'
 ```
 
 

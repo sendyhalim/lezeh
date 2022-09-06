@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use anyhow::anyhow;
 use chrono::{NaiveDate, NaiveDateTime};
 use postgres::types::to_sql_checked;
 use postgres::types::FromSql;
@@ -65,6 +66,31 @@ impl PsqlForeignKey {
 pub struct PsqlTableIdentity {
   pub schema: String,
   pub name: String,
+}
+
+impl std::convert::TryFrom<&str> for PsqlTableIdentity {
+  type Error = anyhow::Error;
+
+  /// Try to create PsqlTableIdentity from string with format `{schema}.{tableName}`
+  /// for example public.users
+  fn try_from(value: &str) -> Result<Self, Self::Error> {
+    let mut splitted: Vec<&str> = value.split('.').collect();
+
+    if splitted.len() == 1 {
+      splitted.insert(0, "public");
+    }
+
+    if splitted.len() != 2 {
+      return Err(anyhow!(
+        "Invalid psql table identity string format, expected in format {{schema}}.{{tableName}}",
+      ));
+    }
+
+    return Ok(PsqlTableIdentity::new(
+      splitted.remove(0),
+      splitted.remove(0),
+    ));
+  }
 }
 
 impl PsqlTableIdentity {
@@ -165,17 +191,16 @@ impl std::fmt::Display for PsqlTableRow {
 }
 
 impl PsqlTableRow {
-  pub fn new(table: PsqlTable, row: Rc<Row>) -> PsqlTableRow {
-    let sink = row.get::<'_, _, FromSqlSink>("id");
+  pub fn new(table: PsqlTable, row: Rc<Row>) -> ResultAnyError<PsqlTableRow> {
+    let row_id_sql_sink = row.get::<'_, _, FromSqlSink>("id");
 
-    // TODO: NOT GOOD, find better ways
-    let row_id = sink.to_string_for_statement().unwrap();
-
-    return PsqlTableRow {
-      table,
-      row_id_representation: row_id.trim_matches('\'').to_string(),
-      inner_row: row,
-    };
+    return row_id_sql_sink.to_string_for_statement().map(|row_id| {
+      return PsqlTableRow {
+        table,
+        row_id_representation: row_id.trim_matches('\'').to_string(),
+        inner_row: row,
+      };
+    });
   }
 }
 
