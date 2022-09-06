@@ -118,10 +118,15 @@ lezeh db cherry-pick \
 
   # [Optional]
   # The option will be used if you choose pass `--output-format=graphviz`.
-  # Set the table columns that will be displayed on each node in format
+  # Set the table columns that will be displayed on each node, if not set it'll 
+  # default to only show the row id, format:
   # '{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}'
-  # for example 'users:id|name|email, orders:|code'
-  # If not set it'll default to only show the row id
+  #
+  # Suppose you pass `--graph-table-columns='users:id|name|email, orders:code'`, it will 
+  # * Show id, name and email column value for all fetched rows from users table
+  # * Show code column value for all fetched rows from orders table
+  # * The other rows from other tables will still only show row id because
+  #   it's not overriden
   --graph-table-columns='{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}, {table_n}:{column_n}'
 ```
 
