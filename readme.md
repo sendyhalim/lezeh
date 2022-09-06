@@ -116,7 +116,9 @@ lezeh db cherry-pick \
   # * https://dreampuf.github.io/GraphvizOnline
   --output-format=insert-statement|graphviz \
 
-  # [Optional] Set the table columns that will be displayed on each node in format
+  # [Optional]
+  # The option will be used if you choose pass `--output-format=graphviz`.
+  # Set the table columns that will be displayed on each node in format
   # '{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}'
   # for example 'users:id|name|email, orders:|code'
   # If not set it'll default to only show the row id
