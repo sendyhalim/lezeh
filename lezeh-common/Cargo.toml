@@ -1,0 +1,40 @@
+[package]
+name = "lezeh-common"
+version = "0.0.1"
+authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
+edition = "2018"
+description = """
+Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
+"""
+readme = "readme.md"
+homepage = "https://github.com/sendyhalim/lezeh"
+repository = "https://github.com/sendyhalim/lezeh"
+keywords = ["cli", "developer-tools"]
+categories = ["command-line-utilities"]
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+handlebars = { version = "4.1" }
+rust-embed = { version = "5.9.0" }
+anyhow = { version = "1.0" }
+thiserror = { version = "1.0" }
+petgraph = { version = "0.6.2" }
+
+chrono = { version = "0.4" }
+env_logger = { version = "0.7" }
+serde = { version = "1.0.60", features = ["derive"] }
+erased-serde = { version = "0.3" }
+serde_json = { version = "1.0" }
+serde_yaml = { version = "0.8" }
+itertools = { version = "0.10" }
+slog = { version = "2.5" }
+slog-async = { version = "2.5.0" }
+slog-envlogger = { version = "2.2.0" }
+slog-term = { version = "2.6.0" }
+
+[lib]
+name = "lezeh_common"
+path = "src/lib/lib.rs"
+
