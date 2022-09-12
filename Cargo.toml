@@ -3,4 +3,5 @@ members = [
   "lezeh",
   "lezeh-common",
   "lezeh-url",
+  "lezeh-bill",
 ]

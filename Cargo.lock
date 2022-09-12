@@ -885,6 +885,7 @@ dependencies = [
  "handlebars",
  "indoc",
  "itertools",
+ "lezeh-bill",
  "lezeh-common",
  "lezeh-url",
  "log",
@@ -910,6 +911,14 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "lezeh-bill"
+version = "0.0.1"
+dependencies = [
+ "clap",
+ "lezeh-common",
 ]
 
 [[package]]
