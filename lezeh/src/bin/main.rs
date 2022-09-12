@@ -4,8 +4,8 @@ use lezeh_bill::cli::BillCli;
 use lezeh_common::config::Config;
 use lezeh_common::types::ResultAnyError;
 use lezeh_db::cli::DbCli;
+use lezeh_deployment::cli::DeploymentCli;
 use lezeh_url::cli::UrlCli;
-use lib::deployment::cli::DeploymentCli;
 
 use slog::*;
 

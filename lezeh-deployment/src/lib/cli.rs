@@ -6,11 +6,11 @@ use clap::ArgMatches;
 use clap::SubCommand;
 use serde::Serialize;
 
-use crate::deployment::client::FailedMergeTaskOutput;
-use crate::deployment::client::GlobalDeploymentClient;
-use crate::deployment::client::SuccesfulMergeTaskOutput;
-use crate::deployment::client::TaskInMasterBranch;
-use crate::deployment::client::UserTaskMapping;
+use crate::client::FailedMergeTaskOutput;
+use crate::client::GlobalDeploymentClient;
+use crate::client::SuccesfulMergeTaskOutput;
+use crate::client::TaskInMasterBranch;
+use crate::client::UserTaskMapping;
 use lezeh_common::config::Config;
 use lezeh_common::handlebars::HandlebarsRenderer;
 use lezeh_common::types::ResultAnyError;

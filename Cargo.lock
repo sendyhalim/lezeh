@@ -888,6 +888,7 @@ dependencies = [
  "lezeh-bill",
  "lezeh-common",
  "lezeh-db",
+ "lezeh-deployment",
  "lezeh-url",
  "log",
  "mockall",
@@ -970,6 +971,37 @@ dependencies = [
  "slog-term",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "lezeh-deployment"
+version = "0.7.8"
+dependencies = [
+ "anyhow",
+ "built",
+ "chrono",
+ "clap",
+ "env_logger",
+ "erased-serde",
+ "futures",
+ "ghub",
+ "handlebars",
+ "itertools",
+ "lezeh-common",
+ "log",
+ "phab-lib",
+ "reqwest",
+ "rust-embed",
+ "serde 1.0.123",
+ "serde_json",
+ "serde_yaml",
+ "slog",
+ "slog-async",
+ "slog-envlogger",
+ "slog-term",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]
