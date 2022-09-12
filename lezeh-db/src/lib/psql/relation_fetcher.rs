@@ -6,8 +6,8 @@ use petgraph::graph::Graph as BaseGraph;
 use petgraph::graph::NodeIndex;
 use petgraph::Directed as DirectedGraph;
 
-use crate::db::psql::dto::*;
-use crate::db::psql::table_metadata::TableMetadata;
+use crate::psql::dto::*;
+use crate::psql::table_metadata::TableMetadata;
 use lezeh_common::types::ResultAnyError;
 
 pub type RowGraph = BaseGraph<Rc<PsqlTableRow>, i32, DirectedGraph>;
@@ -194,7 +194,7 @@ impl RelationFetcher {
 //   use super::*;
 //   mod fetch_referenced_rows {
 //     use super::*;
-//     use crate::db::psql::table_metadata::MockTableMetadata;
+//     use crate::psql::table_metadata::MockTableMetadata;
 //
 //     fn create_dummy_table() -> PsqlTable {
 //       return PsqlTable::new(

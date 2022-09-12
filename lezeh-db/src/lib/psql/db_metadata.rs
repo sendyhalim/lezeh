@@ -6,8 +6,8 @@ use itertools::Itertools;
 use postgres::types::ToSql;
 use postgres::Row;
 
-use crate::db::psql::connection::PsqlConnection;
-use crate::db::psql::dto::*;
+use crate::psql::connection::PsqlConnection;
+use crate::psql::dto::*;
 use lezeh_common::types::ResultAnyError;
 
 pub type PsqlParamValue = Box<dyn ToSql + Sync>;

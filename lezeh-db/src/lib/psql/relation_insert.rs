@@ -3,10 +3,10 @@ use std::rc::Rc;
 
 use itertools::Itertools;
 
-use crate::db::psql::dto::FromSqlSink;
-use crate::db::psql::dto::PsqlTable;
-use crate::db::psql::dto::PsqlTableIdentity;
-use crate::db::psql::dto::PsqlTableRow;
+use crate::psql::dto::FromSqlSink;
+use crate::psql::dto::PsqlTable;
+use crate::psql::dto::PsqlTableIdentity;
+use crate::psql::dto::PsqlTableRow;
 use lezeh_common::types::ResultAnyError;
 
 pub struct TableInsertStatement<'a> {

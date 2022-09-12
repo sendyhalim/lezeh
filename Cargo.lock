@@ -887,6 +887,7 @@ dependencies = [
  "itertools",
  "lezeh-bill",
  "lezeh-common",
+ "lezeh-db",
  "lezeh-url",
  "log",
  "mockall",
@@ -941,6 +942,34 @@ dependencies = [
  "slog-envlogger",
  "slog-term",
  "thiserror",
+]
+
+[[package]]
+name = "lezeh-db"
+version = "0.7.8"
+dependencies = [
+ "anyhow",
+ "built",
+ "chrono",
+ "clap",
+ "env_logger",
+ "fake",
+ "indoc",
+ "itertools",
+ "lezeh-common",
+ "log",
+ "mockall",
+ "mockall_double",
+ "petgraph",
+ "postgres",
+ "postgres-protocol",
+ "postgres-types",
+ "rust_decimal",
+ "slog",
+ "slog-envlogger",
+ "slog-term",
+ "thiserror",
+ "uuid",
 ]
 
 [[package]]

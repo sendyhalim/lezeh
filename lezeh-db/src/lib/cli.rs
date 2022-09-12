@@ -16,12 +16,12 @@ use lezeh_common::config::Config;
 use lezeh_common::config::DbConfig;
 use lezeh_common::graph as graph_util;
 use lezeh_common::types::ResultAnyError;
-use crate::db::psql;
-use crate::db::psql::connection::*;
-use crate::db::psql::db_metadata::DbMetadata;
-use crate::db::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
-use crate::db::psql::relation_fetcher::RowGraph;
-use crate::db::psql::table_metadata::TableMetadataImpl;
+use crate::psql;
+use crate::psql::connection::*;
+use crate::psql::db_metadata::DbMetadata;
+use crate::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
+use crate::psql::relation_fetcher::RowGraph;
+use crate::psql::table_metadata::TableMetadataImpl;
 
 pub struct DbCli {}
 
