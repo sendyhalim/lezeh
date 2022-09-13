@@ -33,11 +33,11 @@ pub struct GlobalDeploymentClient {
   ghub: Arc<GithubClient>,
 
   #[allow(dead_code)]
-  logger: Logger,
+  logger: &'static Logger,
 }
 
 impl GlobalDeploymentClient {
-  pub fn new(config: Config, logger: Logger) -> ResultAnyError<GlobalDeploymentClient> {
+  pub fn new(config: Config, logger: &'static Logger) -> ResultAnyError<GlobalDeploymentClient> {
     let cert_identity_config = CertIdentityConfig {
       pkcs12_path: config.phab.pkcs12_path.clone(),
       pkcs12_password: config.phab.pkcs12_password.clone(),

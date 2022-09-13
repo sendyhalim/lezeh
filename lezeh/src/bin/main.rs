@@ -2,12 +2,11 @@ use clap::App as Cli;
 
 use lezeh_bill::cli::BillCli;
 use lezeh_common::config::Config;
+use lezeh_common::logger;
 use lezeh_common::types::ResultAnyError;
 use lezeh_db::cli::DbCli;
 use lezeh_deployment::cli::DeploymentCli;
 use lezeh_url::cli::UrlCli;
-
-use slog::*;
 
 pub mod built_info {
   include!(concat!(env!("OUT_DIR"), "/built.rs"));
@@ -15,18 +14,7 @@ pub mod built_info {
 
 #[tokio::main]
 async fn main() -> ResultAnyError<()> {
-  env_logger::init();
-
-  let log_decorator = slog_term::TermDecorator::new().build();
-  let log_drain = slog_term::CompactFormat::new(log_decorator).build().fuse();
-  let rust_log_val = std::env::var("RUST_LOG").unwrap_or("info".to_owned());
-  let log_drain = slog_envlogger::LogBuilder::new(log_drain)
-    .parse(&rust_log_val)
-    .build();
-
-  let log_drain = slog_async::Async::new(log_drain).build().fuse();
-
-  let logger = slog::Logger::root(log_drain, o!());
+  let logger = logger::get();
 
   // Default config
   let home_dir = std::env::var("HOME").unwrap();

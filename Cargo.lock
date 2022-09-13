@@ -947,7 +947,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh-db"
-version = "0.7.8"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "built",
@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh-deployment"
-version = "0.7.8"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "built",

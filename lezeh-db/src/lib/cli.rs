@@ -12,16 +12,16 @@ use petgraph::graph::NodeIndex;
 use slog::Logger;
 use std::convert::TryInto;
 
-use lezeh_common::config::Config;
-use lezeh_common::config::DbConfig;
-use lezeh_common::graph as graph_util;
-use lezeh_common::types::ResultAnyError;
 use crate::psql;
 use crate::psql::connection::*;
 use crate::psql::db_metadata::DbMetadata;
 use crate::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
 use crate::psql::relation_fetcher::RowGraph;
 use crate::psql::table_metadata::TableMetadataImpl;
+use lezeh_common::config::Config;
+use lezeh_common::config::DbConfig;
+use lezeh_common::graph as graph_util;
+use lezeh_common::types::ResultAnyError;
 
 pub struct DbCli {}
 
@@ -119,7 +119,7 @@ impl DbCli {
       );
   }
 
-  pub fn run(cli: &ArgMatches<'_>, config: Config, logger: Logger) -> ResultAnyError<()> {
+  pub fn run(cli: &ArgMatches<'_>, config: Config, logger: &'static Logger) -> ResultAnyError<()> {
     match cli.subcommand() {
       ("cherry-pick", Some(cherry_pick_cli)) => {
         let values: Vec<String> = cherry_pick_cli
@@ -165,7 +165,7 @@ struct CherryPickInput<'a> {
   output_format: CherryPickOutputFormatEnum,
   displayed_fields_by_table_id: HashMap<PsqlTableIdentity, Vec<String>>,
   config: Config,
-  logger: Logger,
+  logger: &'static Logger,
 }
 
 impl<'a> CherryPickInput<'a> {
@@ -178,7 +178,7 @@ impl<'a> CherryPickInput<'a> {
     output_format: CherryPickOutputFormatEnum,
     graph_table_columns: Vec<String>,
     config: Config,
-    logger: Logger,
+    logger: &'static Logger,
   ) -> ResultAnyError<CherryPickInput<'a>> {
     return Ok(CherryPickInput {
       source_db,

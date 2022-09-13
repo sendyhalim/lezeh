@@ -66,7 +66,7 @@ impl DeploymentCli {
   pub async fn run(
     cli: &ArgMatches<'_>,
     config: Config,
-    logger: slog::Logger,
+    logger: &'static slog::Logger,
   ) -> ResultAnyError<()> {
     let deployment_client = GlobalDeploymentClient::new(config.clone(), logger)?;
 
