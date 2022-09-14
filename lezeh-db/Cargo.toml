@@ -1,0 +1,46 @@
+[package]
+name = "lezeh-db"
+version = "0.0.1"
+authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
+edition = "2018"
+description = """
+Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
+"""
+readme = "readme.md"
+homepage = "https://github.com/sendyhalim/lezeh"
+repository = "https://github.com/sendyhalim/lezeh"
+keywords = ["cli", "developer-tools"]
+categories = ["command-line-utilities"]
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "2.33" }
+chrono = { version = "0.4" }
+env_logger = { version = "0.7" }
+fake = { version = "2.2", features = ["derive", "chrono"] }
+log = { version = "0.4.8" }
+slog = { version = "2.5" }
+slog-envlogger = { version = "2.2.0" }
+slog-term = { version = "2.6.0" }
+itertools = { version = "0.10" }
+postgres = { version = "0.19", features = ["with-chrono-0_4"] }
+postgres-types = { version = "0.2.3" }
+postgres-protocol = { version = "0.6.4" }
+rust_decimal = { version = "1.24", features = ["db-postgres"] }
+uuid = { version = "1.1" }
+indoc = { version = "1.0" }
+mockall = { version = "0.11" }
+mockall_double = { version = "0.3" }
+petgraph = { version = "0.6.2" }
+thiserror = { version = "1.0" }
+anyhow = { version = "1.0" }
+lezeh-common = { path = "../lezeh-common" }
+
+[build-dependencies]
+built = "0.4"
+
+[lib]
+name = "lezeh_db"
+path = "src/lib/lib.rs"
