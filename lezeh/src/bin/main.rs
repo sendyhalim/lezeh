@@ -1,7 +1,8 @@
 use clap::App as Cli;
 
+use anyhow::anyhow;
+use lezeh::config::Config;
 use lezeh_bill::cli::BillCli;
-use lezeh_common::config::Config;
 use lezeh_common::logger;
 use lezeh_common::types::ResultAnyError;
 use lezeh_db::cli::DbCli;
@@ -32,14 +33,34 @@ async fn main() -> ResultAnyError<()> {
     .get_matches();
 
   match cli.subcommand() {
-    ("deployment", Some(cli)) => DeploymentCli::run(cli, config, logger).await?,
-    ("url", Some(url_cli)) => UrlCli::run(url_cli, config).await?,
+    ("deployment", Some(cli)) => {
+      DeploymentCli::run(
+        cli,
+        config
+          .deployment
+          .ok_or(anyhow!("deployment config is not set"))?,
+        logger,
+      )
+      .await?
+    }
+    ("url", Some(url_cli)) => {
+      UrlCli::run(url_cli, config.url.ok_or(anyhow!("url config is not set"))?).await?
+    }
     ("db", Some(db_cli)) => {
       let db_cli = db_cli.clone();
-      return tokio::task::spawn_blocking(move || DbCli::run(&db_cli, config, logger)).await?;
+
+      return tokio::task::spawn_blocking(move || {
+        DbCli::run(
+          &db_cli,
+          config.db.ok_or(anyhow!("db config is not set"))?,
+          logger,
+        )
+      })
+      .await?;
     }
     ("bill", Some(bill_cli)) => {
       let bill_cli = bill_cli.clone();
+
       return tokio::task::spawn_blocking(move || BillCli::run(&bill_cli)).await?;
     }
     _ => {}

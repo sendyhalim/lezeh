@@ -21,6 +21,8 @@ chrono = { version = "0.4" }
 env_logger = { version = "0.7" }
 fake = { version = "2.2", features = ["derive", "chrono"] }
 log = { version = "0.4.8" }
+serde = { version = "1.0.60", features = ["derive"] }
+serde_yaml = { version = "0.8" }
 slog = { version = "2.5" }
 slog-envlogger = { version = "2.2.0" }
 slog-term = { version = "2.6.0" }

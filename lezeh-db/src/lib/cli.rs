@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::rc::Rc;
 
 use anyhow::anyhow;
@@ -7,21 +8,19 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
+use lezeh_common::graph as graph_util;
+use lezeh_common::types::ResultAnyError;
 use petgraph::dot::{Config as GraphDotConfig, Dot as GraphDot};
 use petgraph::graph::NodeIndex;
 use slog::Logger;
-use std::convert::TryInto;
 
+use crate::config::{Config, DbConnectionConfig};
 use crate::psql;
 use crate::psql::connection::*;
 use crate::psql::db_metadata::DbMetadata;
 use crate::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
 use crate::psql::relation_fetcher::RowGraph;
 use crate::psql::table_metadata::TableMetadataImpl;
-use lezeh_common::config::Config;
-use lezeh_common::config::DbConfig;
-use lezeh_common::graph as graph_util;
-use lezeh_common::types::ResultAnyError;
 
 pub struct DbCli {}
 
@@ -241,11 +240,8 @@ impl DbCli {
       logger,
     } = input;
 
-    let db_by_name: HashMap<String, DbConfig> = config
-      .db_by_name
-      .ok_or_else(|| anyhow!("Db config is not set"))?;
-
-    let source_db_config: DbConfig = db_by_name
+    let source_db_config: DbConnectionConfig = config
+      .db_connection_by_name
       .get(source_db)
       .ok_or_else(|| anyhow!("Source db {} is not registered", source_db))?
       .clone();

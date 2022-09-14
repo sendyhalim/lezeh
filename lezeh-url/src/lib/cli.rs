@@ -1,11 +1,10 @@
-use anyhow::anyhow;
 use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 
 use crate::client::LezehUrlClient;
-use lezeh_common::config::Config;
+use crate::config::Config;
 use lezeh_common::types::ResultAnyError;
 
 pub struct UrlCli {}
@@ -23,9 +22,7 @@ impl UrlCli {
   }
 
   pub async fn run(cli: &ArgMatches<'_>, config: Config) -> ResultAnyError<()> {
-    let bitly_config = config.bitly.ok_or(anyhow!("Could not get bitly config"))?;
-
-    let url_client = LezehUrlClient::new(bitly_config);
+    let url_client = LezehUrlClient::new(config);
 
     if let Some(shorten_cli) = cli.subcommand_matches("shorten") {
       let long_url: &str = shorten_cli.value_of("long_url").unwrap();

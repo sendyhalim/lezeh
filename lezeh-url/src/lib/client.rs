@@ -1,14 +1,14 @@
 use url::form_urlencoded;
 
-use lezeh_common::config::BitlyConfig;
+use crate::config::Config;
 use lezeh_common::types::ResultAnyError;
 
 pub struct LezehUrlClient {
-  config: BitlyConfig,
+  config: Config,
 }
 
 impl LezehUrlClient {
-  pub fn new(config: BitlyConfig) -> LezehUrlClient {
+  pub fn new(config: Config) -> LezehUrlClient {
     return LezehUrlClient { config };
   }
 }
@@ -19,7 +19,7 @@ impl LezehUrlClient {
 
     let bitly_api = format!(
       "https://api-ssl.bitly.com/v3/shorten?access_token={}&longUrl={}&format=txt",
-      self.config.api_token, encoded_url
+      self.config.bitly.api_token, encoded_url
     );
 
     let short_url: String = reqwest::get(&bitly_api).await?.text().await?;

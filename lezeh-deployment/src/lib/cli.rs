@@ -11,7 +11,7 @@ use crate::client::GlobalDeploymentClient;
 use crate::client::SuccesfulMergeTaskOutput;
 use crate::client::TaskInMasterBranch;
 use crate::client::UserTaskMapping;
-use lezeh_common::config::Config;
+use crate::config::Config;
 use lezeh_common::handlebars::HandlebarsRenderer;
 use lezeh_common::types::ResultAnyError;
 
@@ -155,7 +155,6 @@ impl DeploymentCli {
 
       let output: String = HandlebarsRenderer::new().render_from_template_path(
         &config
-          .deployment
           .merge_feature_branches
           .unwrap()
           .output_template_path

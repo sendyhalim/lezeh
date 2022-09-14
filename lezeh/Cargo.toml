@@ -60,6 +60,11 @@ lezeh-deployment = { path = "../lezeh-deployment" }
 [build-dependencies]
 built = "0.4"
 
+[lib]
+name = "lezeh"
+path = "src/lib/lib.rs"
+
+
 
 [[bin]]
 name = "lezeh"

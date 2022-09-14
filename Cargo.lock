@@ -966,6 +966,8 @@ dependencies = [
  "postgres-protocol",
  "postgres-types",
  "rust_decimal",
+ "serde 1.0.123",
+ "serde_yaml",
  "slog",
  "slog-envlogger",
  "slog-term",
@@ -1017,6 +1019,8 @@ dependencies = [
  "reqwest",
  "serde 1.0.123",
  "serde_json",
+ "serde_yaml",
+ "thiserror",
  "tokio",
  "url",
 ]

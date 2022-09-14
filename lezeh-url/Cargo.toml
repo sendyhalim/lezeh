@@ -22,10 +22,12 @@ reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0.60", features = ["derive"] }
 erased-serde = { version = "0.3" }
 serde_json = { version = "1.0" }
+serde_yaml = { version = "0.8" }
 tokio = { version = "1" , features = ["full"]}
 url = { version = "2.2.1" }
 itertools = { version = "0.10" }
 anyhow = { version = "1.0" }
+thiserror = { version = "1.0" }
 lezeh-common = { path = "../lezeh-common" }
 
 [lib]
