@@ -38,7 +38,7 @@ mockall_double = { version = "0.3" }
 petgraph = { version = "0.6.2" }
 thiserror = { version = "1.0" }
 anyhow = { version = "1.0" }
-lezeh-common = { path = "../lezeh-common" }
+lezeh-common = { path = "../lezeh-common" , version = "0.0.1" }
 
 [build-dependencies]
 built = "0.4"
