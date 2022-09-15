@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
-Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
+Common functionalities for lezeh. See https://github.com/sendyhalim/lezeh for details.
 """
 readme = "readme.md"
 homepage = "https://github.com/sendyhalim/lezeh"
@@ -21,7 +21,6 @@ rust-embed = { version = "5.9.0" }
 anyhow = { version = "1.0" }
 thiserror = { version = "1.0" }
 petgraph = { version = "0.6.2" }
-
 chrono = { version = "0.4" }
 env_logger = { version = "0.7" }
 serde = { version = "1.0.60", features = ["derive"] }
