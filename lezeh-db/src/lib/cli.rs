@@ -22,6 +22,10 @@ use crate::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
 use crate::psql::relation_fetcher::RowGraph;
 use crate::psql::table_metadata::TableMetadataImpl;
 
+pub mod built_info {
+  include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 pub struct DbCli {}
 
 enum CherryPickOutputFormatEnum {
@@ -50,10 +54,13 @@ impl std::fmt::Display for CherryPickOutputFormatEnum {
 
 /// CLI definition
 impl DbCli {
-  pub fn cmd<'a, 'b>() -> Cli<'a, 'b> {
-    return Cli::new("db")
+  pub fn cmd<'a, 'b>(cli_name: Option<&str>) -> Cli<'a, 'b> {
+    return Cli::new(cli_name.unwrap_or("lezeh-db"))
       .setting(clap::AppSettings::ArgRequiredElseHelp)
-      .about("db cli")
+      .version(built_info::PKG_VERSION)
+      .author(built_info::PKG_AUTHORS)
+      .about(built_info::PKG_DESCRIPTION)
+      .setting(clap::AppSettings::ArgRequiredElseHelp)
       .subcommand(
         SubCommand::with_name("cherry-pick")
           .about(indoc::indoc! {"

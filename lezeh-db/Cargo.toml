@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
-Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
+CLI related with db operations, mostly to improve productivity working with databases. See https://github.com/sendyhalim/lezeh for details.
 """
 readme = "readme.md"
 homepage = "https://github.com/sendyhalim/lezeh"
@@ -42,6 +42,7 @@ lezeh-common = { path = "../lezeh-common" }
 
 [build-dependencies]
 built = "0.4"
+
 
 [lib]
 name = "lezeh_db"

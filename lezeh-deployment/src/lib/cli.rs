@@ -15,6 +15,10 @@ use crate::config::Config;
 use lezeh_common::handlebars::HandlebarsRenderer;
 use lezeh_common::types::ResultAnyError;
 
+pub mod built_info {
+  include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 #[derive(Debug, Serialize)]
 struct TaskMergeSummary<'a> {
   success_merge_results: Vec<&'a SuccesfulMergeTaskOutput>,
@@ -35,15 +39,17 @@ impl<'a> Default for TaskMergeSummary<'a> {
 pub struct DeploymentCli {}
 
 impl DeploymentCli {
-  pub fn cmd<'a, 'b>() -> Cli<'a, 'b> {
+  pub fn cmd<'a, 'b>(cli_name: Option<&str>) -> Cli<'a, 'b> {
     let task_id_args = Arg::with_name("task_ids")
       .multiple(true)
       .required(true)
       .help("task ids");
 
-    return Cli::new("deployment")
+    return Cli::new(cli_name.unwrap_or("lezeh-deployment"))
+        .version(built_info::PKG_VERSION)
+        .author(built_info::PKG_AUTHORS)
+        .about(built_info::PKG_DESCRIPTION)
         .setting(clap::AppSettings::ArgRequiredElseHelp)
-        .about("deployment cli")
         .subcommand(
           SubCommand::with_name("deploy")
           .about("Merge repo (given repo key) based on given deployment scheme config")

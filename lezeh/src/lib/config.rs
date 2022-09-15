@@ -1,8 +1,6 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use anyhow::anyhow;
 use lezeh_db::config::Config as DbConfig;
 use lezeh_deployment::config::Config as DeploymentConfig;
 use lezeh_url::config::Config as UrlConfig;

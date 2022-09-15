@@ -7,11 +7,18 @@ use crate::client::LezehUrlClient;
 use crate::config::Config;
 use lezeh_common::types::ResultAnyError;
 
+pub mod built_info {
+  include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 pub struct UrlCli {}
 
 impl UrlCli {
-  pub fn cmd<'a, 'b>() -> Cli<'a, 'b> {
-    return Cli::new("url")
+  pub fn cmd<'a, 'b>(cli_name: Option<&str>) -> Cli<'a, 'b> {
+    return Cli::new(cli_name.unwrap_or("lezeh-url"))
+      .version(built_info::PKG_VERSION)
+      .author(built_info::PKG_AUTHORS)
+      .about(built_info::PKG_DESCRIPTION)
       .setting(clap::AppSettings::ArgRequiredElseHelp)
       .about("url cli")
       .subcommand(

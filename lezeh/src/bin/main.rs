@@ -21,15 +21,15 @@ async fn main() -> ResultAnyError<()> {
   let home_dir = std::env::var("HOME").unwrap();
   let config = Config::new(format!("{}/.lezeh", home_dir))?;
 
-  let cli = Cli::new("Lezeh")
+  let cli = Cli::new("lezeh")
     .version(built_info::PKG_VERSION)
     .author(built_info::PKG_AUTHORS)
-    .setting(clap::AppSettings::ArgRequiredElseHelp)
     .about(built_info::PKG_DESCRIPTION)
-    .subcommand(DeploymentCli::cmd())
-    .subcommand(UrlCli::cmd())
-    .subcommand(DbCli::cmd())
-    .subcommand(BillCli::cmd())
+    .setting(clap::AppSettings::ArgRequiredElseHelp)
+    .subcommand(DeploymentCli::cmd(Some("deployment")))
+    .subcommand(UrlCli::cmd(Some("url")))
+    .subcommand(DbCli::cmd(Some("db")))
+    .subcommand(BillCli::cmd(Some("bill")))
     .get_matches();
 
   match cli.subcommand() {

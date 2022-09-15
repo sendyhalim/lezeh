@@ -919,6 +919,7 @@ dependencies = [
 name = "lezeh-bill"
 version = "0.0.1"
 dependencies = [
+ "built",
  "clap",
  "lezeh-common",
 ]
@@ -1011,6 +1012,7 @@ name = "lezeh-url"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "built",
  "clap",
  "erased-serde",
  "futures",

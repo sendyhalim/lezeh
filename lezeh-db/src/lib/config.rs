@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
@@ -33,7 +32,7 @@ impl Config {
       };
     })?;
 
-    let mut config: Config = serde_yaml::from_str(&config_str).map_err(|err| {
+    let config: Config = serde_yaml::from_str(&config_str).map_err(|err| {
       return ConfigError::ConfigDeserializeError {
         config_path: setting_path.to_string(),
         root_err: format!("{:#?}", err),
