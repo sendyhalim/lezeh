@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::rc::Rc;
 
 use anyhow::anyhow;
@@ -7,21 +8,23 @@ use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
+use lezeh_common::graph as graph_util;
+use lezeh_common::types::ResultAnyError;
 use petgraph::dot::{Config as GraphDotConfig, Dot as GraphDot};
 use petgraph::graph::NodeIndex;
 use slog::Logger;
-use std::convert::TryInto;
 
+use crate::config::{Config, DbConnectionConfig};
 use crate::psql;
 use crate::psql::connection::*;
 use crate::psql::db_metadata::DbMetadata;
 use crate::psql::dto::{FromSqlSink, PsqlTable, PsqlTableIdentity, PsqlTableRow};
 use crate::psql::relation_fetcher::RowGraph;
 use crate::psql::table_metadata::TableMetadataImpl;
-use lezeh_common::config::Config;
-use lezeh_common::config::DbConfig;
-use lezeh_common::graph as graph_util;
-use lezeh_common::types::ResultAnyError;
+
+pub mod built_info {
+  include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 
 pub struct DbCli {}
 
@@ -51,10 +54,13 @@ impl std::fmt::Display for CherryPickOutputFormatEnum {
 
 /// CLI definition
 impl DbCli {
-  pub fn cmd<'a, 'b>() -> Cli<'a, 'b> {
-    return Cli::new("db")
+  pub fn cmd<'a, 'b>(cli_name: Option<&str>) -> Cli<'a, 'b> {
+    return Cli::new(cli_name.unwrap_or("lezeh-db"))
       .setting(clap::AppSettings::ArgRequiredElseHelp)
-      .about("db cli")
+      .version(built_info::PKG_VERSION)
+      .author(built_info::PKG_AUTHORS)
+      .about(built_info::PKG_DESCRIPTION)
+      .setting(clap::AppSettings::ArgRequiredElseHelp)
       .subcommand(
         SubCommand::with_name("cherry-pick")
           .about(indoc::indoc! {"
@@ -241,11 +247,8 @@ impl DbCli {
       logger,
     } = input;
 
-    let db_by_name: HashMap<String, DbConfig> = config
-      .db_by_name
-      .ok_or_else(|| anyhow!("Db config is not set"))?;
-
-    let source_db_config: DbConfig = db_by_name
+    let source_db_config: DbConnectionConfig = config
+      .db_connection_by_name
       .get(source_db)
       .ok_or_else(|| anyhow!("Source db {} is not registered", source_db))?
       .clone();

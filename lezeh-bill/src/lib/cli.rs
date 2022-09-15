@@ -7,13 +7,20 @@ use clap::SubCommand;
 
 use lezeh_common::types::ResultAnyError;
 
+pub mod built_info {
+  include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 pub struct BillCli {}
 
 impl BillCli {
-  pub fn cmd<'a, 'b>() -> Cli<'a, 'b> {
-    return Cli::new("bill")
+  pub fn cmd<'a, 'b>(cli_name: Option<&str>) -> Cli<'a, 'b> {
+    return Cli::new(cli_name.unwrap_or("lezeh-bill"))
+      .version(built_info::PKG_VERSION)
+      .author(built_info::PKG_AUTHORS)
+      .about(built_info::PKG_DESCRIPTION)
       .setting(clap::AppSettings::ArgRequiredElseHelp)
-      .about("bill cli")
+      .about("CLI related with bill data processing. Mostly for personal use")
       .subcommand(
         SubCommand::with_name("cc-beautify")
           .about("Beautify the given cc bill")

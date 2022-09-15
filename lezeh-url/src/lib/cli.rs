@@ -1,18 +1,24 @@
-use anyhow::anyhow;
 use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 
 use crate::client::LezehUrlClient;
-use lezeh_common::config::Config;
+use crate::config::Config;
 use lezeh_common::types::ResultAnyError;
+
+pub mod built_info {
+  include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 
 pub struct UrlCli {}
 
 impl UrlCli {
-  pub fn cmd<'a, 'b>() -> Cli<'a, 'b> {
-    return Cli::new("url")
+  pub fn cmd<'a, 'b>(cli_name: Option<&str>) -> Cli<'a, 'b> {
+    return Cli::new(cli_name.unwrap_or("lezeh-url"))
+      .version(built_info::PKG_VERSION)
+      .author(built_info::PKG_AUTHORS)
+      .about(built_info::PKG_DESCRIPTION)
       .setting(clap::AppSettings::ArgRequiredElseHelp)
       .about("url cli")
       .subcommand(
@@ -23,9 +29,7 @@ impl UrlCli {
   }
 
   pub async fn run(cli: &ArgMatches<'_>, config: Config) -> ResultAnyError<()> {
-    let bitly_config = config.bitly.ok_or(anyhow!("Could not get bitly config"))?;
-
-    let url_client = LezehUrlClient::new(bitly_config);
+    let url_client = LezehUrlClient::new(config);
 
     if let Some(shorten_cli) = cli.subcommand_matches("shorten") {
       let long_url: &str = shorten_cli.value_of("long_url").unwrap();

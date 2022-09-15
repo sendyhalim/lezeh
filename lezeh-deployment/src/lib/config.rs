@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::types::ResultAnyError;
+use lezeh_common::types::ResultAnyError;
 
 /// Phab config
 /// -------------
@@ -24,14 +23,6 @@ pub struct PhabConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GhubConfig {
   pub api_token: String,
-}
-
-/// Deployment config
-/// -------------
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DeploymentConfig {
-  pub repositories: Vec<RepositoryConfig>,
-  pub merge_feature_branches: Option<MergeFeatureBranchesConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,24 +54,16 @@ impl Default for MergeFeatureBranchesConfig {
   }
 }
 
-/// Bitly config
-/// -------------
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BitlyConfig {
-  pub api_token: String,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
   pub phab: PhabConfig,
   pub ghub: GhubConfig,
-  pub bitly: Option<BitlyConfig>,
-  pub deployment: DeploymentConfig,
-  pub db_by_name: Option<HashMap<String, DbConfig>>,
+  pub repositories: Vec<RepositoryConfig>,
+  pub merge_feature_branches: Option<MergeFeatureBranchesConfig>,
 }
 
 impl Config {
-  pub fn new(setting_path: impl AsRef<Path> + std::fmt::Display) -> ResultAnyError<Config> {
+  pub fn from(setting_path: impl AsRef<Path> + std::fmt::Display) -> ResultAnyError<Config> {
     let config_str = fs::read_to_string(&setting_path).map_err(|err| {
       return ConfigError::ReadConfigError {
         config_path: setting_path.to_string(),
@@ -95,8 +78,8 @@ impl Config {
       };
     })?;
 
-    if config.deployment.merge_feature_branches.is_none() {
-      config.deployment.merge_feature_branches = Some(Default::default());
+    if config.merge_feature_branches.is_none() {
+      config.merge_feature_branches = Some(Default::default());
     }
 
     return Ok(config);
@@ -116,14 +99,4 @@ pub enum ConfigError {
     config_path: String,
     root_err: String,
   },
-}
-
-/// DB Related Command Config
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DbConfig {
-  pub host: String,
-  pub port: u32,
-  pub database: String,
-  pub username: String,
-  pub password: Option<String>,
 }

@@ -1,7 +1,8 @@
 use clap::App as Cli;
 
+use anyhow::anyhow;
+use lezeh::config::Config;
 use lezeh_bill::cli::BillCli;
-use lezeh_common::config::Config;
 use lezeh_common::logger;
 use lezeh_common::types::ResultAnyError;
 use lezeh_db::cli::DbCli;
@@ -20,26 +21,46 @@ async fn main() -> ResultAnyError<()> {
   let home_dir = std::env::var("HOME").unwrap();
   let config = Config::new(format!("{}/.lezeh", home_dir))?;
 
-  let cli = Cli::new("Lezeh")
+  let cli = Cli::new("lezeh")
     .version(built_info::PKG_VERSION)
     .author(built_info::PKG_AUTHORS)
-    .setting(clap::AppSettings::ArgRequiredElseHelp)
     .about(built_info::PKG_DESCRIPTION)
-    .subcommand(DeploymentCli::cmd())
-    .subcommand(UrlCli::cmd())
-    .subcommand(DbCli::cmd())
-    .subcommand(BillCli::cmd())
+    .setting(clap::AppSettings::ArgRequiredElseHelp)
+    .subcommand(DeploymentCli::cmd(Some("deployment")))
+    .subcommand(UrlCli::cmd(Some("url")))
+    .subcommand(DbCli::cmd(Some("db")))
+    .subcommand(BillCli::cmd(Some("bill")))
     .get_matches();
 
   match cli.subcommand() {
-    ("deployment", Some(cli)) => DeploymentCli::run(cli, config, logger).await?,
-    ("url", Some(url_cli)) => UrlCli::run(url_cli, config).await?,
+    ("deployment", Some(cli)) => {
+      DeploymentCli::run(
+        cli,
+        config
+          .deployment
+          .ok_or(anyhow!("deployment config is not set"))?,
+        logger,
+      )
+      .await?
+    }
+    ("url", Some(url_cli)) => {
+      UrlCli::run(url_cli, config.url.ok_or(anyhow!("url config is not set"))?).await?
+    }
     ("db", Some(db_cli)) => {
       let db_cli = db_cli.clone();
-      return tokio::task::spawn_blocking(move || DbCli::run(&db_cli, config, logger)).await?;
+
+      return tokio::task::spawn_blocking(move || {
+        DbCli::run(
+          &db_cli,
+          config.db.ok_or(anyhow!("db config is not set"))?,
+          logger,
+        )
+      })
+      .await?;
     }
     ("bill", Some(bill_cli)) => {
       let bill_cli = bill_cli.clone();
+
       return tokio::task::spawn_blocking(move || BillCli::run(&bill_cli)).await?;
     }
     _ => {}

@@ -18,10 +18,11 @@ use serde::Serialize;
 use serde_json::Value;
 use slog::Logger;
 
+use crate::config::Config;
+use crate::config::RepositoryConfig;
+
 use lezeh_common::command;
 use lezeh_common::command::PresetCommand;
-use lezeh_common::config::Config;
-use lezeh_common::config::RepositoryConfig;
 use lezeh_common::types::ResultAnyError;
 
 pub struct GlobalDeploymentClient {
@@ -52,7 +53,6 @@ impl GlobalDeploymentClient {
     let ghub = Arc::new(GithubClient::new(&config.ghub.api_token)?);
 
     let repository_deployment_client_by_key: HashMap<String, RepositoryDeploymentClient> = config
-      .deployment
       .repositories
       .clone()
       .into_iter()

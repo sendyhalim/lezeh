@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
-Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
+CLI related with db operations, mostly to improve productivity working with databases. See https://github.com/sendyhalim/lezeh for details.
 """
 readme = "readme.md"
 homepage = "https://github.com/sendyhalim/lezeh"
@@ -21,6 +21,8 @@ chrono = { version = "0.4" }
 env_logger = { version = "0.7" }
 fake = { version = "2.2", features = ["derive", "chrono"] }
 log = { version = "0.4.8" }
+serde = { version = "1.0.60", features = ["derive"] }
+serde_yaml = { version = "0.8" }
 slog = { version = "2.5" }
 slog-envlogger = { version = "2.2.0" }
 slog-term = { version = "2.6.0" }
@@ -40,6 +42,7 @@ lezeh-common = { path = "../lezeh-common" }
 
 [build-dependencies]
 built = "0.4"
+
 
 [lib]
 name = "lezeh_db"

@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh"
-version = "0.7.8"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "built",
@@ -919,6 +919,7 @@ dependencies = [
 name = "lezeh-bill"
 version = "0.0.1"
 dependencies = [
+ "built",
  "clap",
  "lezeh-common",
 ]
@@ -966,6 +967,8 @@ dependencies = [
  "postgres-protocol",
  "postgres-types",
  "rust_decimal",
+ "serde 1.0.123",
+ "serde_yaml",
  "slog",
  "slog-envlogger",
  "slog-term",
@@ -1009,6 +1012,7 @@ name = "lezeh-url"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "built",
  "clap",
  "erased-serde",
  "futures",
@@ -1017,6 +1021,8 @@ dependencies = [
  "reqwest",
  "serde 1.0.123",
  "serde_json",
+ "serde_yaml",
+ "thiserror",
  "tokio",
  "url",
 ]

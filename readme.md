@@ -31,32 +31,37 @@ make install
 ```
 
 
-First create config file at `~/.lezeh`, we're using YAML format.
 ## Setup
+First create config file at `~/.lezeh`, we're using YAML format. Each top level key
+is named after lezeh sub command:
+* `url` maps to `lezeh url ...` command
+* `db` maps to `lezeh db ...` sub command
+* and so on...
 
 ```yaml
-phab:
-  api_token: test125
-  pkcs12_path: /path/to/pkcs12
-  host: 'yourphabricatorhost.com'
-  pkcs12_password: abcdefg
+url:
+  bitly:
+    api_token: test123
 
-ghub:
-  api_token: test124
+db:
+  db_connection_by_name:
+    testdb:
+      host: localhost
+      port: 5432
+      database: db_name
+      username: ....
+      password: ....
 
-bitly:
-  api_token: test123
-
-db_by_name:
-  testdb:
-    host: localhost
-    port: 5432
-    database: db_name
-    username: ....
-    password: ....
-
-# Deployment command config
 deployment:
+  phab:
+    api_token: test125
+    pkcs12_path: /path/to/pkcs12
+    host: 'yourphabricatorhost.com'
+    pkcs12_password: abcdefg
+
+  ghub:
+    api_token: test124
+
   repositories:
       # This is a unique key that will be used as hashmap key
       # for the repo.
@@ -118,11 +123,11 @@ lezeh db cherry-pick \
 
   # [Optional]
   # The option will be used if you choose pass `--output-format=graphviz`.
-  # Set the table columns that will be displayed on each node, if not set it'll 
+  # Set the table columns that will be displayed on each node, if not set it'll
   # default to only show the row id, format:
   # '{table_1}:{column_1}|{column_2}|{column_n},{table_n}:{column_n}'
   #
-  # Suppose you pass `--graph-table-columns='users:id|name|email, orders:code'`, it will 
+  # Suppose you pass `--graph-table-columns='users:id|name|email, orders:code'`, it will
   # * Show id, name and email column value for all fetched rows from users table
   # * Show code column value for all fetched rows from orders table
   # * The other rows from other tables will still only show row id because
