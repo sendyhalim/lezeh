@@ -1,11 +1,14 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
+use anyhow::anyhow;
 use clap::App as Cli;
 use clap::Arg;
 use clap::ArgMatches;
 use clap::SubCommand;
 use serde::Serialize;
 
+use crate::asset;
 use crate::client::FailedMergeTaskOutput;
 use crate::client::GlobalDeploymentClient;
 use crate::client::SuccesfulMergeTaskOutput;
@@ -159,14 +162,18 @@ impl DeploymentCli {
         Box::from(not_found_user_task_mapping_by_task_id),
       );
 
-      let output: String = HandlebarsRenderer::new().render_from_template_path(
-        &config
-          .merge_feature_branches
-          .unwrap()
-          .output_template_path
-          .unwrap(),
-        template_data,
-      )?;
+      let template_path = &config
+        .merge_feature_branches
+        .unwrap()
+        .output_template_path
+        .unwrap();
+
+      let template: Cow<[u8]> =
+        asset::Asset::get(template_path).ok_or(anyhow!("Cannot get template {}", template_path))?;
+      let mut template_buffer = template.as_ref();
+
+      let output: String =
+        HandlebarsRenderer::new().render_from_template_path(&mut template_buffer, template_data)?;
 
       println!("{}", output);
     }

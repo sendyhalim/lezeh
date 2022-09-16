@@ -1,8 +1,9 @@
-use std::borrow::Cow;
+// use std::borrow::Cow;
+use std::io::BufRead;
 
 use anyhow::Error;
 
-use crate::asset::Asset;
+// use crate::asset::Asset;
 use crate::types::ResultAnyError;
 
 pub struct HandlebarsRenderer {
@@ -35,13 +36,11 @@ impl HandlebarsRenderer {
 
   pub fn render_from_template_path(
     &self,
-    template_path: &str,
+    // template_path: &str,
+    template_reader: &mut impl BufRead,
     json_serializible: impl serde::Serialize,
   ) -> ResultAnyError<String> {
-    let buf: Cow<[u8]> = Asset::get(template_path).unwrap();
-    let buf: &[u8] = buf.as_ref();
-
-    let template_string: String = String::from_utf8(Vec::from(buf)).unwrap();
+    let template_string = String::from_utf8(template_reader.fill_buf()?.to_vec())?;
 
     return self.render(&template_string, json_serializible);
   }
