@@ -6,7 +6,7 @@ edition = "2018"
 description = """
 Work specific productivity commands manage billing data, mostly for personal use. See https://github.com/sendyhalim/lezeh for details.
 """
-readme = "readme.md"
+readme = "../readme.md"
 homepage = "https://github.com/sendyhalim/lezeh"
 repository = "https://github.com/sendyhalim/lezeh"
 keywords = ["cli", "developer-tools"]
