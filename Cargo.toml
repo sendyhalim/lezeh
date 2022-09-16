@@ -4,4 +4,6 @@ members = [
   "lezeh-common",
   "lezeh-url",
   "lezeh-bill",
+  "lezeh-db",
+  "lezeh-deployment",
 ]
