@@ -17,7 +17,6 @@ license = "MIT"
 
 [dependencies]
 handlebars = { version = "4.1" }
-rust-embed = { version = "5.9.0" }
 anyhow = { version = "1.0" }
 thiserror = { version = "1.0" }
 petgraph = { version = "0.6.2" }
