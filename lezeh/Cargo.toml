@@ -6,7 +6,7 @@ edition = "2018"
 description = """
 Work specific productivity commands. See https://github.com/sendyhalim/lezeh for details.
 """
-readme = "readme.md"
+readme = "../readme.md"
 homepage = "https://github.com/sendyhalim/lezeh"
 repository = "https://github.com/sendyhalim/lezeh"
 keywords = ["cli", "developer-tools"]
@@ -51,10 +51,10 @@ thiserror = { version = "1.0" }
 anyhow = { version = "1.0" }
 regex = { version = "1.6" }
 lezeh-common = { path = "../lezeh-common" , version = "0.0.1" }
-lezeh-url = { path = "../lezeh-url" }
-lezeh-bill = { path = "../lezeh-bill" }
-lezeh-db = { path = "../lezeh-db" }
-lezeh-deployment = { path = "../lezeh-deployment" }
+lezeh-url = { path = "../lezeh-url", version = "0.0.1" }
+lezeh-bill = { path = "../lezeh-bill", version = "0.0.1" }
+lezeh-db = { path = "../lezeh-db", version = "0.0.1" }
+lezeh-deployment = { path = "../lezeh-deployment", version = "0.0.1" }
 
 
 [build-dependencies]
