@@ -164,7 +164,7 @@ impl DeploymentCli {
 
       let template_path = &config
         .merge_feature_branches
-        .unwrap()
+        .unwrap_or(Default::default())
         .output_template_path
         .unwrap();
 

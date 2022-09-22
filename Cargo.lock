@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "built",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh-deployment"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "built",
