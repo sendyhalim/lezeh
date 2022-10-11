@@ -354,17 +354,12 @@ impl RepositoryDeploymentClient {
     }
 
     let pull_request = pull_request.unwrap();
-    let mergeable: bool = pull_request["mergeable"].as_bool().ok_or_else(|| {
-      return anyhow!(
-        "Could not read mergeable field from pull request {:?}",
-        pull_request,
-      );
-    })?;
 
+    let mergeable: Option<bool> = pull_request["mergeable"].as_bool();
     let pull_number = &format!("{}", pull_request["number"]);
     let pull_request_url = format!("https://github.com/{}/pull/{}", repo_path, pull_number);
 
-    if !mergeable {
+    if mergeable.is_some() && !mergeable {
       return Err(
         ClientOperationError::MergeError {
           remote_branch: source_branch_name.into(),
@@ -373,7 +368,13 @@ impl RepositoryDeploymentClient {
         .into(),
       );
     }
-    // }
+
+    if mergeable.is_none() {
+      slog::warn!(
+        self.logger,
+        "Could not reat mergeable will try to proceed, it should be safe because it will throw error if it's actually not mergeable from github side"
+      )
+    }
 
     // Merge
     // -----------------------
