@@ -54,7 +54,7 @@ lezeh-common = { path = "../lezeh-common" , version = "0.0.1" }
 lezeh-url = { path = "../lezeh-url", version = "0.0.1" }
 lezeh-bill = { path = "../lezeh-bill", version = "0.0.1" }
 lezeh-db = { path = "../lezeh-db", version = "0.0.1" }
-lezeh-deployment = { path = "../lezeh-deployment", version = "0.0.2" }
+lezeh-deployment = { path = "../lezeh-deployment", version = "0.0.3" }
 
 
 [build-dependencies]

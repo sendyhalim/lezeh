@@ -359,7 +359,7 @@ impl RepositoryDeploymentClient {
     let pull_number = &format!("{}", pull_request["number"]);
     let pull_request_url = format!("https://github.com/{}/pull/{}", repo_path, pull_number);
 
-    if mergeable.is_some() && !mergeable {
+    if mergeable.is_some() && !mergeable.unwrap() {
       return Err(
         ClientOperationError::MergeError {
           remote_branch: source_branch_name.into(),
@@ -372,7 +372,7 @@ impl RepositoryDeploymentClient {
     if mergeable.is_none() {
       slog::warn!(
         self.logger,
-        "Could not reat mergeable will try to proceed, it should be safe because it will throw error if it's actually not mergeable from github side"
+        "Could not reat mergeable will try to proceed, it should be safe because it will throw error if it's not mergeable from github side"
       )
     }
 
