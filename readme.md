@@ -94,7 +94,7 @@ Mostly tooling related with database operations. Only supports postgres as of no
 #### cherry-pick
 Imagine you have this 1 table row that you want to copy but you can't easily
 copy it because it has relations and you need to copy the parents and children
-recursively. This is where cherry-pick can be useful.
+recursively. This is where cherry-pick 🍒 can be useful, it will fetch row that matches the given column-value pair including its relations, then build a graph from it, the graph can be serialized into insert statements(default option) or graphviz(to visualize the graph)
 
 ```bash
 lezeh db cherry-pick \
