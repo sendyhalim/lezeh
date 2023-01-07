@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "built",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "lezeh-deployment"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "built",
@@ -1374,9 +1374,9 @@ dependencies = [
 
 [[package]]
 name = "phab-lib"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b6e7cf0fe82fdf1e7009447522656710b3d830ebe557c4820b66d891c6a0fd3"
+checksum = "c3844224332b7c8ef78b4c7b1315a6acc39ec0c683902161c288e0fd70e03a64"
 dependencies = [
  "anyhow",
  "fake",
