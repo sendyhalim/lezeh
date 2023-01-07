@@ -5,6 +5,6 @@ install:
 	cargo install --force --path .
 
 publish:
-	cargo publish
+	cargo publish --package lezeh
 
 .PHONY: build install
