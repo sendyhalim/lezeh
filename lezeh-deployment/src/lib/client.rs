@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::process::Stdio;
 use std::sync::Arc;
 
 use anyhow::anyhow;
 use anyhow::Error;
 use futures::FutureExt;
+use futures::StreamExt;
 use ghub::v3::branch::DeleteBranchInput;
 use ghub::v3::client::GithubClient;
 use ghub::v3::pull_request as github_pull_request;
@@ -164,6 +166,7 @@ impl GlobalDeploymentClient {
   pub async fn merge_feature_branches(
     &self,
     task_ids: &Vec<&str>,
+    concurrency_limit: usize,
   ) -> ResultAnyError<MergeFeatureBranchesOutput> {
     let tasks: Vec<Task> = self.phabricator.get_tasks_by_ids(task_ids.clone()).await?;
     let task_by_id: HashMap<String, Task> = tasks
@@ -190,13 +193,18 @@ impl GlobalDeploymentClient {
       .map(|user| (user.phid.clone(), user))
       .collect();
 
-    let mut merge_results: Vec<ResultAnyError<MergeAllTasksOutput>> = vec![];
+    // Create async tasks that will be run in parallel.
+    let tasks = self
+      .repository_deployment_client_by_key
+      .values()
+      .map(|deployment_client| {
+        return deployment_client.merge_all_tasks(&task_by_id);
+      });
 
-    for deployment_client in self.repository_deployment_client_by_key.values() {
-      let merge_result = deployment_client.merge_all_tasks(&task_by_id).await;
-
-      merge_results.push(merge_result);
-    }
+    let merge_results: Vec<ResultAnyError<MergeAllTasksOutput>> = futures::stream::iter(tasks)
+      .buffered(concurrency_limit)
+      .collect()
+      .await;
 
     // Make sure that all is well
     let merge_results: ResultAnyError<Vec<MergeAllTasksOutput>> =
@@ -440,12 +448,16 @@ impl RepositoryDeploymentClient {
     &self,
     task_by_id: &HashMap<String, Task>,
   ) -> ResultAnyError<MergeAllTasksOutput> {
+    // slog::info!(self.logger, "HAA");
+    // tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // slog::info!(self.logger, "HOOO");
+
     slog::info!(self.logger, "[Run] git checkout master");
 
     slog::info!(
       self.logger,
       "{}",
-      self.preset_command.exec("git checkout master")?
+      self.preset_command.exec("git checkout master").await?
     );
 
     slog::info!(self.logger, "[Run] git pull origin master");
@@ -453,7 +465,7 @@ impl RepositoryDeploymentClient {
     slog::info!(
       self.logger,
       "{}",
-      self.preset_command.exec("git pull origin master")?
+      self.preset_command.exec("git pull origin master").await?
     );
 
     // This will sync deleted branch remotely, sometimes we've deleted remote branch
@@ -462,7 +474,7 @@ impl RepositoryDeploymentClient {
     slog::info!(
       self.logger,
       "{}",
-      self.preset_command.exec("git remote prune origin")?
+      self.preset_command.exec("git remote prune origin").await?
     );
 
     slog::info!(self.logger, "[Run] git fetch --all");
@@ -470,12 +482,12 @@ impl RepositoryDeploymentClient {
     slog::info!(
       self.logger,
       "{}",
-      self.preset_command.exec("git fetch --all")?
+      self.preset_command.exec("git fetch --all").await?
     );
 
     slog::info!(self.logger, "[Run] git branch -r");
 
-    let remote_branches = self.preset_command.exec("git branch -r")?;
+    let remote_branches = self.preset_command.exec("git branch -r").await?;
     let task_ids: Vec<&str> = task_by_id.keys().map(String::as_ref).collect();
 
     let filtered_branch_mappings: Vec<MatchedTaskBranchMapping> =
@@ -631,11 +643,14 @@ impl RepositoryDeploymentClient {
     &self,
     task_ids: &Vec<&str>,
   ) -> ResultAnyError<HashMap<String, Vec<TaskInMasterBranch>>> {
-    let git_log_handle = self.preset_command.spawn_command_from_str(
-      "git log --oneline --no-decorate", // In format {abbreviatedHash} {message}
-      None,
-      Some(Stdio::piped()),
-    )?;
+    let git_log_handle = self
+      .preset_command
+      .spawn_command_from_str(
+        "git log --oneline --no-decorate", // In format {abbreviatedHash} {message}
+        None,
+        Some(Stdio::piped()),
+      )
+      .await?;
 
     let grep_regex_input = task_ids.iter().fold("".to_owned(), |acc, task_id| {
       if acc.is_empty() {
@@ -649,10 +664,12 @@ impl RepositoryDeploymentClient {
       .preset_command
       .spawn_command_from_str(
         &format!("grep {}", grep_regex_input),
-        Some(git_log_handle.stdout.unwrap().into()),
+        Some(git_log_handle.stdout.unwrap().try_into()?),
         None,
-      )?
-      .wait_with_output()?;
+      )
+      .await?
+      .wait_with_output()
+      .await?;
 
     let grep_output = command::handle_command_output(grep_output)?;
     let commit_messages: Vec<&str> = grep_output

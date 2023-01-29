@@ -28,7 +28,7 @@ url = { version = "2.2.1" }
 itertools = { version = "0.10" }
 anyhow = { version = "1.0" }
 thiserror = { version = "1.0" }
-lezeh-common = { path = "../lezeh-common" , version = "0.0.1" }
+lezeh-common = { path = "../lezeh-common" , version = "0.1.0" }
 
 
 [build-dependencies]

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
-use std::process::Command;
 use std::process::Stdio;
+use tokio::process::Child as ChildProcess;
+use tokio::process::Command;
 
 use crate::types::ResultAnyError;
 use crate::utils;
@@ -13,10 +14,12 @@ pub struct PresetCommand {
 }
 
 impl PresetCommand {
-  pub fn exec(&self, command_str: &str) -> ResultAnyError<String> {
+  pub async fn exec(&self, command_str: &str) -> ResultAnyError<String> {
     let command_result = self
-      .spawn_command_from_str(command_str, None, None)?
-      .wait_with_output()?;
+      .spawn_command_from_str(command_str, None, None)
+      .await?
+      .wait_with_output()
+      .await?;
 
     if !command_result.stderr.is_empty() {
       return stderr_to_err(command_result.stderr);
@@ -25,12 +28,12 @@ impl PresetCommand {
     return utils::bytes_to_string(command_result.stdout);
   }
 
-  pub fn spawn_command_from_str(
+  pub async fn spawn_command_from_str(
     &self,
     command_str: &str,
     stdin: Option<Stdio>,
     stdout: Option<Stdio>,
-  ) -> ResultAnyError<std::process::Child> {
+  ) -> ResultAnyError<ChildProcess> {
     let mut command_parts: VecDeque<String> =
       PresetCommand::create_command_parts_from_string(command_str);
 

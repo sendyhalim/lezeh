@@ -68,7 +68,13 @@ impl DeploymentCli {
         .subcommand(
           SubCommand::with_name("merge-feature-branches")
           .about("Rebase and merge all feature branches for all repos in the config based on the given task ids")
-          .arg(task_id_args),
+          .arg(task_id_args)
+          .arg(Arg::with_name("concurrency_limit")
+            .help("Set the number of concurrency limit")
+            .long("--concurrency-limit")
+            .takes_value(true)
+            .default_value("1")
+          ),
         );
   }
 
@@ -93,8 +99,17 @@ impl DeploymentCli {
         .map(Into::into)
         .collect();
 
-      let merge_feature_branches_output =
-        deployment_client.merge_feature_branches(&task_ids).await?;
+      let concurrency_limit: &str = merge_feature_branches_cli
+        .value_of("concurrency_limit")
+        .unwrap();
+
+      let concurrency_limit: usize = concurrency_limit.parse().map_err(|err| {
+        return anyhow!("Cannot parse '{}' as usize: {}", concurrency_limit, err);
+      })?;
+
+      let merge_feature_branches_output = deployment_client
+        .merge_feature_branches(&task_ids, concurrency_limit)
+        .await?;
       let not_found_user_task_mapping_by_task_id: HashMap<String, &UserTaskMapping> =
         merge_feature_branches_output
           .not_found_user_task_mappings

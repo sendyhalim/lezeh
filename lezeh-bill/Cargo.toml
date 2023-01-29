@@ -17,7 +17,7 @@ license = "MIT"
 
 [dependencies]
 clap = { version = "2.33" }
-lezeh-common = { path = "../lezeh-common" , version = "0.0.1" }
+lezeh-common = { path = "../lezeh-common" , version = "0.1.0" }
 
 
 [build-dependencies]

@@ -1,6 +1,6 @@
 [package]
 name = "lezeh-deployment"
-version = "0.0.4"
+version = "0.0.5"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
@@ -39,7 +39,7 @@ url = { version = "2.2.1" }
 itertools = { version = "0.10" }
 thiserror = { version = "1.0" }
 anyhow = { version = "1.0" }
-lezeh-common = { path = "../lezeh-common" , version = "0.0.1" }
+lezeh-common = { path = "../lezeh-common" , version = "0.1.0" }
 
 
 [build-dependencies]
