@@ -149,8 +149,8 @@ lezeh db cherry-pick \
 lezeh deployment merge-feature-branches \
   {task_number} {task_number} {task_number} ... \
   
-  # Set number of concurrency limit when merging feature branchs. Defaults to 1, meaning it will 
-  # merge feature branches per repository sequentially. If you set it to N then it will run in 
+  # Set number of concurrency limit when merging feature branches. Defaults to 1, meaning it will 
+  # sequentially merge feature branches per repository. If you set it to N then it will run in 
   # parallel at most N repositories at a time. At the repository level, merging should be sequential 
   # otherwise it'll race with other pull requests.
   --concurrency-limit=1
