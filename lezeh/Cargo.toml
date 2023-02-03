@@ -1,6 +1,6 @@
 [package]
 name = "lezeh"
-version = "0.8.4"
+version = "0.8.5"
 authors = ["Sendy Halim <sendyhalim93@gmail.com>"]
 edition = "2018"
 description = """
@@ -54,7 +54,7 @@ lezeh-common = { path = "../lezeh-common" , version = "0.1.0" }
 lezeh-url = { path = "../lezeh-url", version = "0.0.1" }
 lezeh-bill = { path = "../lezeh-bill", version = "0.0.1" }
 lezeh-db = { path = "../lezeh-db", version = "0.0.1" }
-lezeh-deployment = { path = "../lezeh-deployment", version = "0.0.5" }
+lezeh-deployment = { path = "../lezeh-deployment", version = "0.0.6" }
 
 
 [build-dependencies]

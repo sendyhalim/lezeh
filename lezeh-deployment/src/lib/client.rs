@@ -83,9 +83,10 @@ impl GlobalDeploymentClient {
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum ClientOperationError {
-  #[error("Merge failed, please see {pull_request_url}")]
+pub enum GitError {
+  #[error("Merge failed err: {message}. Please see {pull_request_url}")]
   MergeError {
+    message: String,
     remote_branch: String,
     pull_request_url: String,
   },
@@ -335,7 +336,7 @@ impl RepositoryDeploymentClient {
         {
           let remote_branch: String = source_branch_name.into();
 
-          return ClientOperationError::RemoteBranchIsBehindMasterError {
+          return GitError::RemoteBranchIsBehindMasterError {
             remote_branch: remote_branch.clone(),
             debug_url: format!("https://github.com/{}/tree/{}", repo_path, remote_branch),
           }
@@ -369,7 +370,8 @@ impl RepositoryDeploymentClient {
 
     if mergeable.is_some() && !mergeable.unwrap() {
       return Err(
-        ClientOperationError::MergeError {
+        GitError::MergeError {
+          message: format!("mergeable field is falsy ({})", mergeable.unwrap()),
           remote_branch: source_branch_name.into(),
           pull_request_url,
         }
@@ -393,7 +395,17 @@ impl RepositoryDeploymentClient {
     };
 
     slog::info!(self.logger, "Merging PR {:?}", input);
-    let res_body: Value = self.ghub.pull_request.merge(input).await?;
+
+    let res_body: Value = self.ghub.pull_request.merge(input).await.map_err(|err| {
+      // This is to handle merge error when we can't read `mergeable` field,
+      // we'll just rewrap the error so the merge sequence does not stop.
+      return GitError::MergeError {
+        message: err.to_string(),
+        remote_branch: source_branch_name.into(),
+        pull_request_url: pull_request_url.clone(),
+      };
+    })?;
+
     slog::info!(self.logger, "Done merging PR");
     slog::debug!(self.logger, "Response body {:?}", res_body);
 
@@ -403,7 +415,8 @@ impl RepositoryDeploymentClient {
 
     if !merge_succeeded {
       return Err(
-        ClientOperationError::MergeError {
+        GitError::MergeError {
+          message: "Not sure why".into(),
           remote_branch: source_branch_name.into(),
           pull_request_url,
         }
@@ -534,7 +547,7 @@ impl RepositoryDeploymentClient {
     let show_stopper_error: Option<&Error> = results.iter().find_map(
       |(_task_id, result): &(String, ResultAnyError<SuccesfulMergeOutput>)| -> Option<&Error> {
         return result.as_ref().err().filter(|err| {
-          let maybe_merge_error: Option<&ClientOperationError> = err.downcast_ref();
+          let maybe_merge_error: Option<&GitError> = err.downcast_ref();
 
           return maybe_merge_error.is_none();
         });
@@ -557,11 +570,18 @@ impl RepositoryDeploymentClient {
       .map(
         |(task_id, possible_merge_error): (String, ResultAnyError<SuccesfulMergeOutput>)| -> (String, FailedMergeTaskOutput) {
           let err = possible_merge_error.err().unwrap();
-          let client_operation_error: &ClientOperationError = err.downcast_ref().unwrap();
+          let client_operation_error: &GitError = err.downcast_ref().unwrap();
 
           let (remote_branch, debug_url) = match client_operation_error {
-            ClientOperationError::MergeError{remote_branch, pull_request_url} => (remote_branch, pull_request_url),
-            ClientOperationError::RemoteBranchIsBehindMasterError{remote_branch, debug_url} => (remote_branch, debug_url),
+            GitError::MergeError{
+              message: _,
+              remote_branch,
+              pull_request_url
+            } => (remote_branch, pull_request_url),
+            GitError::RemoteBranchIsBehindMasterError{
+              remote_branch,
+              debug_url
+            } => (remote_branch, debug_url),
           };
 
           return (
