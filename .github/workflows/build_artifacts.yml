@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.60.0 # config-rs dependency linked-hash-map is broken on stable rust
+          toolchain: 1.74.0
           target: ${{ matrix.target }}
           override: true
 
