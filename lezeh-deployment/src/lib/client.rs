@@ -555,7 +555,10 @@ impl RepositoryDeploymentClient {
     );
 
     if show_stopper_error.is_some() {
-      return Err(anyhow!(format!("{}", show_stopper_error.unwrap())));
+      return Err(anyhow!(format!(
+        "Show stopper error {}",
+        show_stopper_error.unwrap()
+      )));
     }
 
     let (successes, failures): (
