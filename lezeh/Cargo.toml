@@ -50,6 +50,7 @@ petgraph = { version = "0.6.2" }
 thiserror = { version = "1.0" }
 anyhow = { version = "1.0" }
 regex = { version = "1.6" }
+openssl = { version = "0.10.35", features = ["vendored"] }
 lezeh-common = { path = "../lezeh-common" , version = "0.1.0" }
 lezeh-url = { path = "../lezeh-url", version = "0.0.1" }
 lezeh-bill = { path = "../lezeh-bill", version = "0.0.1" }
